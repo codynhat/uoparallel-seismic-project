@@ -22,7 +22,7 @@ int main() {
 
     // adding a value to all components of a point
     c = p3daddval( a, val );
-    printf( "a %c %d: (%d, %d, %d)\n", val < 0 ? '-' : '+', val, c.x, c.y, c.z );
+    printf( "a + %d: (%d, %d, %d)\n", val, c.x, c.y, c.z );
 
     // subtracting one point from another 
     c = p3dsubp3d( a, b );
