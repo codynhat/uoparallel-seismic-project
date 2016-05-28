@@ -107,17 +107,6 @@ p3dismore (
 
 inline extern
 struct POINT3D
-p3dsizeofregion (
-    const struct POINT3D min,
-    const struct POINT3D max
-)
-{
-    return p3daddp3d( min, p3daddval( max, 1 ) );
-}
-
-
-inline extern
-struct POINT3D
 p3dsubp3d (
     const struct POINT3D pta,
     const struct POINT3D ptb
@@ -129,13 +118,24 @@ p3dsubp3d (
 
 
 inline extern
+struct POINT3D
+p3dsizeofregion (
+    const struct POINT3D min,
+    const struct POINT3D max
+)
+{
+    return p3daddval( p3dsubp3d( max, min ), 1 );
+}
+
+
+inline extern
 size_t
 p3dcalcvolume (
-    const struct POINT3D pt
+    const struct POINT3D size
 )
 // correctly computes volume even if larger than int
 {
-    return (size_t)pt.x * pt.y * pt.z;
+    return (size_t)size.x * size.y * size.z;
 }
 
 
