@@ -8,7 +8,7 @@
 
 const char *text_velocity_file = "../docs/velocity-241-241-51.txt";
 const char *vbox_output_file = "velocities.vbox";
-const int x = 101, y = 105, z = 25; // test coordinates
+const struct POINT3D pos = {101, 105, 25};
 
 int main()
 {
@@ -27,13 +27,13 @@ int main()
     vboxfprint( stdout, "old: ", "\t", vbox );
 
     // read one value from the vbox in memory
-    float oldval = boxget( vbox.box, x, y, z );
-    printf( "value at (%d, %d, %d) = %g\n", x, y, z, oldval ); 
+    float oldval = boxget( vbox.box, pos );
+    printf( "value at (%d, %d, %d) = %g\n", pos.x, pos.y, pos.z, oldval ); 
     
     // write one value to the vbox in memory
     float newval = oldval * 3.5f + 1.f;
-    printf( "modifying value at (%d, %d, %d) to %g\n", x, y, z, newval );
-    boxput( vbox.box, x, y, z, newval );
+    printf( "modifying value at (%d, %d, %d) to %g\n", pos.x, pos.y, pos.z, newval );
+    boxput( vbox.box, pos, newval );
 
 ////////////////////////////////////////////////////////////////////////////////
 // writing vbox-format file
@@ -60,7 +60,7 @@ int main()
     vboxfprint( stdout, "new: ", "\t", vbox );
 
     // show that the modified value is present in the new file
-    printf( "value at (%d, %d, %d) = %g\n", x, y, z, boxget( vbox.box, x, y, z ) );
+    printf( "value at (%d, %d, %d) = %g\n", pos.x, pos.y, pos.z, boxget( vbox.box, pos ) );
 
     // free heap memory used by the velocity box
     vboxfree( &vbox );
@@ -81,25 +81,22 @@ int main()
     printf( "size: (%d, %d, %d)\n", vbfile.dims.x, vbfile.dims.y, vbfile.dims.z );
 
     // subset region
-    int ox = vbfile.min.x + vbfile.dims.x / 3;
-    int oy = vbfile.min.y + vbfile.dims.y / 3;
-    int oz = vbfile.min.z + vbfile.dims.z / 3;
-    int nx = vbfile.dims.x / 3;
-    int ny = vbfile.dims.y / 3;
-    int nz = vbfile.dims.z / 3;
+    struct POINT3D third = { vbfile.dims.x / 3, vbfile.dims.y / 3, vbfile.dims.z / 3 };
+    struct POINT3D min = p3daddp3d( vbfile.min, third );
+    struct POINT3D max = p3daddp3d( min, third );
 
-    printf( "subset origin: (%d, %d, %d)\n", ox, oy, oz );
-    printf( "subset size: (%d, %d, %d)\n", nx, ny, nz );
+    printf( "subset min: (%d, %d, %d)\n", min.x, min.y, min.z );
+    printf( "subset max: (%d, %d, %d)\n", max.x, max.y, max.z );
 
     // load a subset of the file into a VELOCITYBOX
-    if( !vbfileloadbinarysubset( &vbox, ox, oy, oz, nx, ny, nz, vbfile ) ) { /* handle error */ }
+    if( !vbfileloadbinarysubset( &vbox, min, max, vbfile ) ) { /* handle error */ }
 
     // close the open vbfile
     vbfileclosebinary( &vbfile );
 
     // display value we changed before
     printf( "in loaded subset: value at (%d, %d, %d) = %g\n",
-        x, y, z, boxget( vbox.box, x - ox, y - oy, z - oz ) );
+        pos.x, pos.y, pos.z, vboxget( vbox, pos ) );
 
     // free heap memory used by the velocity box
     vboxfree( &vbox );

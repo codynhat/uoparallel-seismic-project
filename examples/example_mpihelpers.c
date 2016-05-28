@@ -11,10 +11,8 @@ int main()
     int width = 2;
     int i = 0;
 
-    struct POINT3D src_min;
-    point3dset(&src_min, 1, 1, 1);
-    struct POINT3D src_dims;
-    point3dset(&src_dims, 241, 241, 51);
+    struct POINT3D src_min = {1, 1, 1};
+    struct POINT3D src_dims = {241, 241, 51};
     struct POINT3D min;
     struct POINT3D dims;
 
