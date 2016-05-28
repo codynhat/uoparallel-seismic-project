@@ -4,17 +4,25 @@
 // 
 // A container for a regular-grid velocity volume using global coordinates.
 //
+//
 // Requires:
 //   floatbox.h
+//   point3d.h
+//
 //
 // Data:
 //   struct VELOCITYBOX
 //
+//
 // Functions:
 //   vboxalloc
-//   vboxfprint
 //   vboxfree
-//   vboxinit
+//
+//   vboxget
+//   vboxput
+//
+//   vboxfprint
+//
 // 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -48,36 +56,21 @@ struct VELOCITYBOX {
 // functions
 ////////////////////////////////////////////////////////////////////////////////
 
-void
-vboxinit (
-    struct VELOCITYBOX *vbox
-)
-// initializes vbox to safe default values
-{
-    if( vbox == NULL ) return;
-
-    point3dset( &vbox->min, 0, 0, 0 );
-    point3dset( &vbox->max, 0, 0 ,0 );
-
-    boxinit( &vbox->box );
-}
-
-
 int
 vboxalloc (
     struct VELOCITYBOX *vbox,
-    const int ox, const int oy, const int oz,
-    const int nx, const int ny, const int nz
+    const struct POINT3D min,
+    const struct POINT3D max
 )
 // allocates and initializes a new VELOCITYBOX
 // on error: returns 0 (failure to allocate memory)
 // on success: returns non-zero
 // note: you should use vboxfree(&vbox) when you're done with it.
 {
-    if( !boxalloc( &vbox->box, nx, ny, nz ) ) return 0;
+    if( !boxalloc( &vbox->box, p3dsizeofregion( min, max ) ) ) return 0;
 
-    point3dset( &vbox->min, ox, oy, oz );
-    point3dset( &vbox->max, ox + nx - 1, oy + ny - 1, oz + nz - 1 );
+    vbox->min = min;
+    vbox->max = max;
 
     return 1;
 }
@@ -91,6 +84,31 @@ vboxfree (
 {
     if( vbox == NULL ) return;
     boxfree( &vbox->box );
+}
+
+
+inline extern
+float
+vboxget (
+    const struct VELOCITYBOX vbox,
+    const struct POINT3D pt
+)
+// returns a single value from the given global coordinates
+{
+    return boxget( vbox.box, p3dsubp3d( pt, vbox.min ) );
+}
+
+
+inline extern
+void
+vboxput (
+    const struct VELOCITYBOX vbox,
+    const struct POINT3D pt,
+    const float val
+)
+// stores a single value at the given global coordinates
+{
+    boxput( vbox.box, p3dsubp3d( pt, vbox.min ), val );
 }
 
 
