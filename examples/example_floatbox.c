@@ -24,6 +24,7 @@ int main()
     printf( "value at (%d, %d, %d): %g (should be %g)\n",
         pos.x, pos.y, pos.z, boxget( box, pos ), putval );
 
+    // test fill (also tests reading and writing to every point in the box)
     const float fillval = 9.876f;
     int bad = 0;
     printf( "calling boxsetall(..)...\n" ); fflush( stdout );
