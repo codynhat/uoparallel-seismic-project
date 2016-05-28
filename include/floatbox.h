@@ -15,7 +15,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 //
 // Requires:
-//   ./point3d.h
+//   point3d.h
 //
 //
 // Data:
@@ -61,6 +61,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #include "point3d.h"
+
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -203,7 +204,7 @@ boxfprint (
     FILE *stream,
     const char *prefix,
     const char *indent,
-    struct FLOATBOX box
+    const struct FLOATBOX box
 )
 // metadata friendly-printing
 {

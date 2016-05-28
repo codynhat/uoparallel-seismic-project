@@ -7,6 +7,7 @@
 //
 //
 // Requires:
+//   point3d.h
 //   velocitybox.h
 //
 //
@@ -49,6 +50,7 @@
 // includes
 ////////////////////////////////////////////////////////////////////////////////
 
+#include "point3d.h"
 #include "velocitybox.h"
 
 
@@ -663,7 +665,7 @@ vbfileloadbinary (
     // this union lets us keep track of checksums and do endianness conversion
     union VBOX4BYTES fb;
 
-    // read flat array of velocities from file and store in the FLOATBOX
+    // read flat array of velocities from file and store in the VELOCITYBOX
     {
         size_t i, numvals = boxvolume( vbox->box );
         uint32_t stored_checksum;

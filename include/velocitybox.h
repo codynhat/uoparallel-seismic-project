@@ -26,6 +26,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #include "floatbox.h"
+#include "point3d.h"
 
 
 #include <stdio.h>
@@ -98,7 +99,7 @@ vboxfprint (
     FILE *stream,
     const char *prefix,
     const char *indent,
-    struct VELOCITYBOX vbox
+    const struct VELOCITYBOX vbox
 )
 // metadata friendly-printing
 {
