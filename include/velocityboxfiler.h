@@ -775,9 +775,6 @@ vbfileloadbinarysubset (
     long stridey = vbfile.dims.z * stridez;
     long stridex = vbfile.dims.y * stridey;
 
-    // prepare dimensions for output indexing
-    struct POINT3D size = p3dsizeofregion( min, max );
-
     // this union lets us keep track of checksums and do endianness conversion
     union VBOX4BYTES fb;
 
