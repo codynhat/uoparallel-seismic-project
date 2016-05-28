@@ -1,19 +1,19 @@
 #!/usr/bin/make -f
 
-CC ?= gcc
+CC ?= cc
 CCFLAGS = -std=c11 -O3 -Wall -Wfatal-errors -Wpedantic -Winline
 INCLUDE = -I../include
+RM ?= rm -f
 
-all: example_floatbox example_velocityboxfiler example_mpihelpers
+PROGS = example_point3d
+PROGS += example_floatbox
+PROGS += example_velocityboxfiler
+PROGS += example_mpihelpers
 
-example_floatbox: example_floatbox.c
-	$(CC) $(CCFLAGS) -o example_floatbox example_floatbox.c $(INCLUDE)
+all: $(PROGS)
 
-example_velocityboxfiler: example_velocityboxfiler.c
-	$(CC) $(CCFLAGS) -o example_velocityboxfiler example_velocityboxfiler.c $(INCLUDE)
-
-example_mpihelpers: example_mpihelpers.c
-	$(CC) $(CCFLAGS) -o example_mpihelpers example_mpihelpers.c
+$(PROGS):%: %.c
+	$(CC) $(CCFLAGS) $(INCLUDE) -o $@ $<
 
 clean:
-	$(RM) -f example_floatbox example_velocityboxfiler example_mpihelpers
+	$(RM) $(PROGS)
