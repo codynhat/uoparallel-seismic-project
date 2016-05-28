@@ -6,6 +6,20 @@
 //   struct POINT3D
 //
 //
+// Functions:
+//   p3d
+//
+//   p3daddp3d
+//   p3daddval
+//   p3dsubbp3d
+//
+//   p3disless
+//   p3dismore
+//
+//   p3dcalcvolume
+//   p3dsizeofregion
+//
+//
 ////////////////////////////////////////////////////////////////////////////////
 
 #pragma once
@@ -31,15 +45,97 @@ struct POINT3D {
 // functions
 ////////////////////////////////////////////////////////////////////////////////
 
-void
-point3dset (
-    struct POINT3D *pt,
-    int x, int y, int z
+inline extern
+struct POINT3D
+p3d (
+    const int x, const int y, const int z
+)
+// for convenience to prevent (struct POINT3D) everywhere
+{
+    return (struct POINT3D){x, y, z};
+}
+
+
+inline extern
+struct POINT3D
+p3daddp3d (
+    const struct POINT3D pta,
+    const struct POINT3D ptb
+)
+// pta + ptb
+{
+    return (struct POINT3D){pta.x + ptb.x, pta.y + ptb.y, pta.z + ptb.z};
+}
+
+
+inline extern
+struct POINT3D
+p3daddval (
+    const struct POINT3D pt,
+    const int val
+)
+// add integer to all components of point
+// integer may be negative
+{
+    return p3daddp3d( pt, p3d(val, val, val) );
+}
+
+
+inline extern
+int
+p3disless (
+    const struct POINT3D a,
+    const struct POINT3D b
+)
+// weak comparison: a < b for any component
+{
+    return a.x < b.x || a.y < b.y || a.z < b.z;
+}
+
+
+inline extern
+int
+p3dismore (
+    const struct POINT3D a,
+    const struct POINT3D b
+)
+// weak comparison: a > b for any component
+{
+    return a.x > b.x || a.y > b.y || a.z > b.z;
+}
+
+
+inline extern
+struct POINT3D
+p3dsizeofregion (
+    const struct POINT3D min,
+    const struct POINT3D max
 )
 {
-    pt->x = x;
-    pt->y = y;
-    pt->z = z;
+    return p3daddp3d( min, p3daddval( max, 1 ) );
+}
+
+
+inline extern
+struct POINT3D
+p3dsubp3d (
+    const struct POINT3D pta,
+    const struct POINT3D ptb
+)
+// pta - ptb
+{
+    return (struct POINT3D){pta.x - ptb.x, pta.y - ptb.y, pta.z - ptb.z};
+}
+
+
+inline extern
+size_t
+p3dcalcvolume (
+    const struct POINT3D pt
+)
+// correctly computes volume even if larger than int
+{
+    return (size_t)pt.x * pt.y * pt.z;
 }
 
 
