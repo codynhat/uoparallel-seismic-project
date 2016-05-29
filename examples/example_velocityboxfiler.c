@@ -1,5 +1,7 @@
+////////////////////////////////////////////////////////////////////////////////
 // example_velocityboxfiler.c - Atlee Brink
 // Demonstrates and tests velocityboxfiler.h.
+////////////////////////////////////////////////////////////////////////////////
 
 #include "velocityboxfiler.h"
 
@@ -15,13 +17,13 @@ int main()
 // reading text-format file
 ////////////////////////////////////////////////////////////////////////////////
 
-    struct VELOCITYBOX vbox_orig;
+    struct FLOATBOX box_orig;
 
     // load a text-format velocity file
     printf( "loading old velocity model %s...", text_velocity_file );
     fflush( stdout );
 
-    if( !vbfileloadtext( &vbox_orig, text_velocity_file ) ) {
+    if( !vbfileloadtext( &box_orig, text_velocity_file ) ) {
         // handle error
     }
 
@@ -29,9 +31,9 @@ int main()
     fflush( stdout );
 
     // print the old vbox metadata
-    vboxfprint( stdout, "old: ", "\t", vbox_orig );
+    boxfprint( stdout, "old: ", "\t", box_orig );
 
-    // don't free vbox_orig yet: we're going to use it below
+    // don't free box_orig yet: we're going to use it below
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -40,18 +42,18 @@ int main()
 
     puts("");
 
-    // Write vbox_orig to a new file using the vbox file format
+    // Write box_orig to a new file using the vbox file format
     printf( "storing velocity model to vbox-format file %s...", vbox_output_file );
     fflush( stdout );
 
-    if( !vbfilestorebinary( vbox_output_file, vbox_orig ) ) {
+    if( !vbfilestorebinary( vbox_output_file, box_orig ) ) {
         // handle error
     }
     
     printf( " done.\n" );
     fflush( stdout );
 
-    // don't free vbox_orig yet: we're going to use it below
+    // don't free box_orig yet: we're going to use it below
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -60,13 +62,13 @@ int main()
 
     puts("");
 
-    struct VELOCITYBOX vbox_new;
+    struct FLOATBOX box_new;
 
     // load the vbox file we just created
     printf( "loading velocity model from vbox-format file %s...", vbox_output_file);
     fflush( stdout );
     
-    if( !vbfileloadbinary( &vbox_new, vbox_output_file ) ) {
+    if( !vbfileloadbinary( &box_new, vbox_output_file ) ) {
         // handle error
     }
 
@@ -74,13 +76,13 @@ int main()
     fflush( stdout );
 
     // print the new vbox metadata
-    vboxfprint( stdout, "new: ", "\t", vbox_new );
+    boxfprint( stdout, "new: ", "\t", box_new );
 
-    // don't free vbox_new yet: we're going to use it below
+    // don't free box_new yet: we're going to use it below
 
 
 ////////////////////////////////////////////////////////////////////////////////
-// using global coordinates with vboxget to compare vbox_orig and vbox_new
+// using global coordinates with boxgetglobal to compare box_orig and box_new
 ////////////////////////////////////////////////////////////////////////////////
 
     puts("");
@@ -91,13 +93,13 @@ int main()
         fflush( stdout );
         int bad = 0;
         size_t count = 0;
-        for( int x = vbox_orig.min.x; !bad && x <= vbox_orig.max.x; x++ ) {
-            for( int y = vbox_orig.min.y; !bad && y <= vbox_orig.max.y; y++ ) {
-                for( int z = vbox_orig.min.z; z <= vbox_orig.max.z; z++ ) {
+        for( int x = box_orig.omin.x; !bad && x <= box_orig.omax.x; x++ ) {
+            for( int y = box_orig.omin.y; !bad && y <= box_orig.omax.y; y++ ) {
+                for( int z = box_orig.omin.z; z <= box_orig.omax.z; z++ ) {
                     count++;
                     struct POINT3D pt = {x, y, z};
-                    float val_orig = vboxget( vbox_orig, pt );
-                    float val_new = vboxget( vbox_new, pt );
+                    float val_orig = boxgetglobal( box_orig, pt );
+                    float val_new = boxgetglobal( box_new, pt );
                     if( val_orig != val_new ) {
                         printf( "value mismatch at global coordinate (%d, %d, %d)\n",
                             x, y, z );
@@ -112,12 +114,12 @@ int main()
         }
         if( !bad ) {
             printf( "values agree for %zu of %zu elements\n", count,
-                p3dcalcvolume( p3dsizeofregion( vbox_orig.min, vbox_orig.max ) ) );
+                p3dcalcvolume( p3dsizeofregion( box_orig.omin, box_orig.omax ) ) );
         }
     }
 
-    // free vbox_new, but don't free vbox_orig yet: we're going to use it below
-    vboxfree( &vbox_new );
+    // free box_new, but don't free box_orig yet: we're going to use it below
+    boxfree( &box_new );
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -127,7 +129,7 @@ int main()
     puts("");
 
     struct VBOXOPENFILE vbfile;
-    struct VELOCITYBOX vbox_subset;
+    struct FLOATBOX box_subset;
 
     // open (don't read whole file yet)
     printf( "opening just-written vbox-format velocity model %s...", vbox_output_file);
@@ -142,7 +144,7 @@ int main()
     fflush( stdout );
 
     // subset region
-    struct POINT3D third = { vbfile.dims.x / 3, vbfile.dims.y / 3, vbfile.dims.z / 3 };
+    struct POINT3D third = { vbfile.size.x / 3, vbfile.size.y / 3, vbfile.size.z / 3 };
     struct POINT3D min = p3daddp3d( vbfile.min, third );
     struct POINT3D max = p3daddp3d( min, third );
 
@@ -153,7 +155,7 @@ int main()
     fflush( stdout );
 
     // load a subset of the file into a VELOCITYBOX
-    if( !vbfileloadbinarysubset( &vbox_subset, min, max, vbfile ) ) {
+    if( !vbfileloadbinarysubset( &box_subset, min, max, min, max, vbfile ) ) {
         // handle error
     }
 
@@ -163,11 +165,11 @@ int main()
     // close the open vbfile
     vbfileclosebinary( &vbfile );
 
-    // don't free vbox_subset yet: we're going to use it below
+    // don't free box_subset yet: we're going to use it below
 
 
 ////////////////////////////////////////////////////////////////////////////////
-// using global coordinates to compare vbox_subset with vbox_orig
+// using global coordinates to compare box_subset with box_orig
 ////////////////////////////////////////////////////////////////////////////////
 
     puts("");
@@ -177,13 +179,13 @@ int main()
         fflush( stdout );
         int bad = 0;
         size_t count = 0;
-        for( int x = vbox_subset.min.x; !bad && x <= vbox_subset.max.x; x++ ) {
-            for( int y = vbox_subset.min.y; !bad && y <= vbox_subset.max.y; y++ ) {
-                for( int z = vbox_subset.min.z; z <= vbox_subset.max.z; z++ ) {
+        for( int x = box_subset.omin.x; !bad && x <= box_subset.omax.x; x++ ) {
+            for( int y = box_subset.omin.y; !bad && y <= box_subset.omax.y; y++ ) {
+                for( int z = box_subset.omin.z; z <= box_subset.omax.z; z++ ) {
                     count++;
                     struct POINT3D pt = {x, y, z};
-                    float val_orig = vboxget( vbox_orig, pt );
-                    float val_subset = vboxget( vbox_subset, pt );
+                    float val_orig = boxgetglobal( box_orig, pt );
+                    float val_subset = boxgetglobal( box_subset, pt );
                     if( val_orig != val_subset ) {
                         printf( "value mismatch at global coordinate (%d, %d, %d)\n",
                             x, y, z );
@@ -198,13 +200,13 @@ int main()
         }
         if( !bad ) {
             printf( "values agree for %zu of %zu elements\n", count,
-                p3dcalcvolume( p3dsizeofregion( vbox_subset.min, vbox_subset.max ) ) );
+                p3dcalcvolume( p3dsizeofregion( box_subset.omin, box_subset.omax ) ) );
         }
     }
 
     // free heap memory used by the original and subset
-    vboxfree( &vbox_orig );
-    vboxfree( &vbox_subset );
+    boxfree( &box_orig );
+    boxfree( &box_subset );
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -217,3 +219,8 @@ int main()
 
     return 0;
 }
+
+
+////////////////////////////////////////////////////////////////////////////////
+// END
+////////////////////////////////////////////////////////////////////////////////
