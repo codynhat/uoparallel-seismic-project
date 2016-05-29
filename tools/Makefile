@@ -1,14 +1,16 @@
 #!/usr/bin/make -f
 
-CC ?= gcc
+CC ?= cc
 CCFLAGS = -std=c11 -O3 -Wall -Wfatal-errors -Wpedantic -Winline
 INCLUDE = -I../include
-RM ?= rm
+RM ?= rm -f
 
-all: vconvert
+PROGS = velfileconvert
 
-vconvert: vconvert.c
-	$(CC) $(CCFLAGS) -o vconvert vconvert.c $(INCLUDE)
+all: $(PROGS)
+
+$(PROGS):%: %.c
+	$(CC) $(CCFLAGS) $(INCLUDE) -o $@ $<
 
 clean:
-	$(RM) -f vconvert
+	$(RM) $(PROGS)
