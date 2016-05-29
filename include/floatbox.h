@@ -15,11 +15,17 @@
 //   boxfree
 //
 //   boxindex
-//   boxget
-//   boxput
 //   boxsetall
-//
 //   boxfprint
+//
+//   boxgetlocal
+//   boxputlocal
+//
+//   boxgetglobal
+//   boxputglobal
+//
+//   boxgetinner
+//   boxputinner
 //
 //
 ////////////////////////////////////////////////////////////////////////////////
@@ -204,7 +210,7 @@ boxsetall (
 // sets ALL values in the volume to the given value
 {
     if( box.flat == NULL ) return;
-    for( long i = p3dcalcvolume( box.size ); i-- > 0; box.flat[i] = val );
+    for( long i = 0; i <= box.offset.m; i++ ) box.flat[i] = val;
 }
 
 
