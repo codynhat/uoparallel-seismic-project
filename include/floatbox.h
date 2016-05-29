@@ -190,7 +190,7 @@ boxgetinner (
 
 
 inline extern
-float
+void
 boxputinner (
     const struct FLOATBOX box,
     const struct POINT3D pt,
@@ -239,10 +239,10 @@ boxfprint (
         prefix, indent,
         box.imin.x, box.imin.y, box.imin.z,
         box.imax.x, box.imax.y, box.imax.z );
-    fprintf( stream, "%s%sstride: (%zu, %zu, %zu)\n",
+    fprintf( stream, "%s%sstride: (%ld, %ld, %ld)\n",
         prefix, indent,
         box.stride.x, box.stride.y, box.stride.z );
-    fprintf( stream, "%s%soffset.o: %zu, offset.i: %zu, offset.m: %zu\n",
+    fprintf( stream, "%s%soffset.o: %ld, offset.i: %ld, offset.m: %ld\n",
         prefix, indent,
         box.offset.o, box.offset.i, box.offset.m );
     fprintf( stream, "%s%sflat: %p\n",
