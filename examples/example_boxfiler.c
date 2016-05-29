@@ -1,14 +1,15 @@
 ////////////////////////////////////////////////////////////////////////////////
-// example_velocityboxfiler.c - Atlee Brink
-// Demonstrates and tests velocityboxfiler.h.
+// example_boxfiler.c - Atlee Brink
+// Demonstrates and tests boxfiler.h.
 ////////////////////////////////////////////////////////////////////////////////
 
-#include "velocityboxfiler.h"
+#include "boxfiler.h"
 
 #include <stdio.h> /* for stdout, not necessary otherwise */
 
 const char *text_velocity_file = "../docs/velocity-241-241-51.txt";
 const char *vbox_output_file = "velocities.vbox";
+const char vbox_signature[4] = {'v', 'b', 'o', 'x'};
 const struct POINT3D pos = {101, 105, 25};
 
 int main()
@@ -23,7 +24,7 @@ int main()
     printf( "loading old velocity model %s...", text_velocity_file );
     fflush( stdout );
 
-    if( !vbfileloadtext( &box_orig, text_velocity_file ) ) {
+    if( !boxfileloadtext( &box_orig, text_velocity_file ) ) {
         // handle error
     }
 
@@ -46,7 +47,7 @@ int main()
     printf( "storing velocity model to vbox-format file %s...", vbox_output_file );
     fflush( stdout );
 
-    if( !vbfilestorebinary( vbox_output_file, box_orig ) ) {
+    if( !boxfilestorebinary( vbox_output_file, vbox_signature, box_orig ) ) {
         // handle error
     }
     
@@ -68,7 +69,7 @@ int main()
     printf( "loading velocity model from vbox-format file %s...", vbox_output_file);
     fflush( stdout );
     
-    if( !vbfileloadbinary( &box_new, vbox_output_file ) ) {
+    if( !boxfileloadbinary( &box_new, vbox_output_file, vbox_signature ) ) {
         // handle error
     }
 
@@ -128,14 +129,14 @@ int main()
 
     puts("");
 
-    struct VBOXOPENFILE vbfile;
+    struct BOXOPENFILE boxfile;
     struct FLOATBOX box_subset;
 
     // open (don't read whole file yet)
     printf( "opening just-written vbox-format velocity model %s...", vbox_output_file);
     fflush( stdout );
     
-    if( !vbfileopenbinary( &vbfile, vbox_output_file ) ) {
+    if( !boxfileopenbinary( &boxfile, vbox_output_file, vbox_signature ) ) {
         printf( "error opening %s!\n", vbox_output_file );
         return 0;
     }
@@ -144,8 +145,8 @@ int main()
     fflush( stdout );
 
     // subset region
-    struct POINT3D third = { vbfile.size.x / 3, vbfile.size.y / 3, vbfile.size.z / 3 };
-    struct POINT3D min = p3daddp3d( vbfile.min, third );
+    struct POINT3D third = { boxfile.size.x / 3, boxfile.size.y / 3, boxfile.size.z / 3 };
+    struct POINT3D min = p3daddp3d( boxfile.min, third );
     struct POINT3D max = p3daddp3d( min, third );
 
     printf( "subset min: (%d, %d, %d)\n", min.x, min.y, min.z );
@@ -155,15 +156,15 @@ int main()
     fflush( stdout );
 
     // load a subset of the file into a VELOCITYBOX
-    if( !vbfileloadbinarysubset( &box_subset, min, max, min, max, vbfile ) ) {
+    if( !boxfileloadbinarysubset( &box_subset, min, max, min, max, boxfile ) ) {
         // handle error
     }
 
     printf( " done.\n" );
     fflush( stdout );
 
-    // close the open vbfile
-    vbfileclosebinary( &vbfile );
+    // close the open boxfile
+    boxfileclosebinary( &boxfile );
 
     // don't free box_subset yet: we're going to use it below
 
