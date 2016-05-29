@@ -27,22 +27,22 @@ main (
     char *infile = argv[1];
     char *outfile = argv[2];
 
-	struct FLOATBOX box;
+    struct FLOATBOX box;
 
     printf( "reading old velocity model %s...\n", infile ); fflush( stdout );
-	if (!boxfileloadtext( &box, infile ) ) {
-		fprintf( stderr, "%s: error: boxfileloadtext(..) failed to load %s\n",
-			argv[0], infile );
-		return 1;
-	}
+    if (!boxfileloadtext( &box, infile ) ) {
+        fprintf( stderr, "%s: error: boxfileloadtext(..) failed to load %s\n",
+            argv[0], infile );
+        return 1;
+    }
     printf( "\tdone.\n" ); fflush( stdout );
 
     printf( "writing new velocity model %s...\n", outfile ); fflush( stdout );
     if( !boxfilestorebinary( outfile, signature, box ) ) {
-		fprintf( stderr, "%s: error: boxfilestorebinary(..) failed to store %s\n",
-			argv[0], outfile );	
-		return 1;
-	}
+        fprintf( stderr, "%s: error: boxfilestorebinary(..) failed to store %s\n",
+            argv[0], outfile ); 
+        return 1;
+    }
     printf( "\tdone.\n" ); fflush( stdout );
 
     boxfree( &box );
