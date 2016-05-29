@@ -7,7 +7,7 @@ RM ?= rm -f
 
 PROGS = example_point3d
 PROGS += example_floatbox
-PROGS += example_velocityboxfiler
+PROGS += example_boxfiler
 PROGS += example_mpihelpers
 
 all: $(PROGS)
