@@ -43,9 +43,16 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 struct FLOATBOX {
-    size_t sx, sy, sz; // array strides in 'flat'
-    struct POINT3D size; // (x,y,z) dimensions
-    float *flat; // [x][y][z] order
+    struct POINT3D size;               // total dimensions
+    struct POINT3D omin, omax;         // outer minimum, maximum in box
+    struct POINT3D imin, imax;         // inner minimum, maximum in box
+    struct { long x, y, z; } stride;   // for quickly computing indices
+    struct {
+        long o;                        // hypothetical index of omin
+        long i;                        // hypothetical index of imin
+        long m;                        // actual index of size-1 (max index)
+    } offset;
+    float *flat;                       // [x][y][z] order
 };
 
 
@@ -53,25 +60,48 @@ struct FLOATBOX {
 // functions
 ////////////////////////////////////////////////////////////////////////////////
 
+inline extern
+long
+boxindex (
+    const struct FLOATBOX box,
+    const struct POINT3D pt
+)
+// return an index into box.flat corresponding to the given coordinates
+{
+    return box.stride.x * pt.x + box.stride.y * pt.y + box.stride.z * pt.z;
+}
+
+
 int
 boxalloc (
     struct FLOATBOX *box,
-    const struct POINT3D size
+    const struct POINT3D omin,
+    const struct POINT3D omax,
+    const struct POINT3D imin,
+    const struct POINT3D imax
 )
-// allocates box->flat and sets strides and dimensions appropriately;
-// on error: returns 0 (failure to allocate memory)
-// on success: returns non-zero
+// allocates memory for and prepares contents of 'box'
+// return: 0 on error, non-0 on success
 {
-    size_t numbytes = sizeof(*box->flat) * p3dcalcvolume( size );
-    float *flat = malloc( numbytes );
+    struct POINT3D size = p3dsizeofregion( omin, omax );
+    long numbytes = sizeof(*box->flat) * p3dcalcvolume( size );
 
+    float *flat = malloc( numbytes );
     if( flat == NULL ) return 0;
 
-    box->sx = (size_t)size.y * size.z;
-    box->sy = size.z;
-    box->sz = 1;
-
     box->size = size;
+    box->omin = omin;
+    box->omax = omax;
+    box->imin = imin;
+    box->imax = imax;
+
+    box->stride.x = (long)size.y * size.z;
+    box->stride.y = size.z;
+    box->stride.z = 1;
+
+    box->offset.o = boxindex( *box, omin );
+    box->offset.i = boxindex( *box, imin );
+    box->offset.m = boxindex( *box, p3dsubp3d( omax, omin) );
 
     box->flat = flat;
 
@@ -86,31 +116,18 @@ boxfree (
 // releases heap memory associated with box
 {
     if( box == NULL ) return;
-    box->size = p3d(0, 0, 0);
     free( box->flat );
     box->flat = NULL;
 }
 
 
 inline extern
-size_t
-boxindex (
-    const struct FLOATBOX box,
-    const struct POINT3D pt
-)
-// return an index into box.flat corresponding to the given coordinates
-{
-    return box.sx * pt.x + box.sy * pt.y + box.sz * pt.z;
-}
-
-
-inline extern
 float
-boxget (
+boxgetlocal (
     const struct FLOATBOX box,
     const struct POINT3D pt
 )
-// returns a single value from the given coordinates
+// coordinates relative to total box (from 0,0,0 to size-1)
 {
     return box.flat[ boxindex( box, pt ) ];
 }
@@ -118,14 +135,64 @@ boxget (
 
 inline extern
 void
-boxput (
+boxputlocal (
     const struct FLOATBOX box,
     const struct POINT3D pt,
     const float val
 )
-// stores a single value at the given coordinates
+// coordinates relative to total box (starts at 0,0,0)
 {
     box.flat[ boxindex( box, pt ) ] = val;
+}
+
+
+inline extern
+float
+boxgetglobal (
+    const struct FLOATBOX box,
+    const struct POINT3D pt
+)
+// global coordinates (from box.omin to box.omax)
+{
+    return box.flat[ boxindex( box, pt ) - box.offset.o ];
+}
+
+
+inline extern
+void
+boxputglobal (
+    const struct FLOATBOX box,
+    const struct POINT3D pt,
+    const float val
+)
+// global coordinates (from box.omin to box.omax)
+{
+    box.flat[ boxindex( box, pt ) - box.offset.o ] = val;
+}
+
+
+inline extern
+float
+boxgetinner (
+    const struct FLOATBOX box,
+    const struct POINT3D pt
+)
+// inner coordinates (from 0,0,0 to imax-imin+1)
+{
+    return box.flat[ boxindex( box, pt ) + box.offset.i ];
+}
+
+
+inline extern
+float
+boxputinner (
+    const struct FLOATBOX box,
+    const struct POINT3D pt,
+    const float val
+)
+// inner coordinates (from 0,0,0 to imax-imin+1)
+{
+    box.flat[ boxindex( box, pt ) + box.offset.i ] = val;
 }
 
 
@@ -137,7 +204,7 @@ boxsetall (
 // sets ALL values in the volume to the given value
 {
     if( box.flat == NULL ) return;
-    for( size_t i = p3dcalcvolume( box.size ); i-- > 0; box.flat[i] = val );
+    for( long i = p3dcalcvolume( box.size ); i-- > 0; box.flat[i] = val );
 }
 
 
@@ -155,10 +222,23 @@ boxfprint (
     if( indent == NULL ) indent = "  ";
 
     fprintf( stream, "%sFLOATBOX {\n", prefix );
-    fprintf( stream, "%s%sstrides: (%zu, %zu, %zu)\n",
-        prefix, indent, box.sx, box.sy, box.sz );
     fprintf( stream, "%s%ssize: (%d, %d, %d)\n",
-        prefix, indent, box.size.x, box.size.y, box.size.z );
+        prefix, indent,
+        box.size.x, box.size.y, box.size.z );
+    fprintf( stream, "%s%somin: (%d, %d, %d), omax: (%d, %d, %d)\n",
+        prefix, indent,
+        box.omin.x, box.omin.y, box.omin.z,
+        box.omax.x, box.omax.y, box.omax.z );
+    fprintf( stream, "%s%simin: (%d, %d, %d), imax: (%d, %d, %d)\n",
+        prefix, indent,
+        box.imin.x, box.imin.y, box.imin.z,
+        box.imax.x, box.imax.y, box.imax.z );
+    fprintf( stream, "%s%sstride: (%zu, %zu, %zu)\n",
+        prefix, indent,
+        box.stride.x, box.stride.y, box.stride.z );
+    fprintf( stream, "%s%soffset.o: %zu, offset.i: %zu, offset.m: %zu\n",
+        prefix, indent,
+        box.offset.o, box.offset.i, box.offset.m );
     fprintf( stream, "%s%sflat: %p\n",
         prefix, indent, (void*)box.flat );
     fprintf( stream, "%s}\n", prefix );
