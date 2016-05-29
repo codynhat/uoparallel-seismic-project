@@ -1,9 +1,9 @@
 ////////////////////////////////////////////////////////////////////////////////
-// velocityboxfiler.h - 2016.05.07 - Atlee Brink
+// boxfiler.h - 2016.05.07 - Atlee Brink
 ////////////////////////////////////////////////////////////////////////////////
 //
-// Functions for reading/writing velocity box volumes.
-// Includes a function vbfileloadtext(..) to read text-format files.
+// Functions for reading/writing float box volumes.
+// Includes a function boxfileloadtext(..) to read text-format files.
 //
 //
 // Requires:
@@ -12,18 +12,18 @@
 //
 //
 // Public Datatype:
-//   struct VBOXOPENFILE
+//   struct BOXOPENFILE
 //
 //
 // Public Functions:
-//   vbfileloadtext
+//   boxfileloadtext
 //
-//   vbfileloadbinary 
-//   vbfilestorebinary
+//   boxfileloadbinary 
+//   boxfilestorebinary
 //
-//   vbfileopenbinary
-//   vbfileloadbinarysubset
-//   vbfileclosebinary
+//   boxfileopenbinary
+//   boxfileloadbinarysubset
+//   boxfileclosebinary
 //
 //
 // Private Datatype:
@@ -31,14 +31,14 @@
 //
 //
 // Private Functions:
-//   vbfilechecksum
+//   boxfilechecksum
 //
-//   vbfileread4bytes
-//   vbfilewrite4bytes
+//   boxfileread4bytes
+//   boxfilewrite4bytes
 //
-//   vbfilereversebytes
-//   vbfileread4bytesreversed
-//   vbfilewrite4bytesreversed
+//   boxfilereversebytes
+//   boxfileread4bytesreversed
+//   boxfilewrite4bytesreversed
 //
 //
 ////////////////////////////////////////////////////////////////////////////////
@@ -63,7 +63,7 @@
 // structs
 ////////////////////////////////////////////////////////////////////////////////
 
-struct VBOXOPENFILE {
+struct BOXOPENFILE {
     FILE *file;    // if non-NULL, then assume file is successfully open
     long datapos;  // file position of start of float field
     int is_little_endian;
@@ -90,7 +90,7 @@ union VBOX4BYTES {
 ////////////////////////////////////////////////////////////////////////////////
 
 int
-vbfileloadtext (
+boxfileloadtext (
     struct FLOATBOX *box,
     const char *filename
 )
@@ -107,7 +107,7 @@ vbfileloadtext (
 // on error: returns 0
 // on success: returns non-zero
 {
-    const char *fn = "vbfileloadtext";
+    const char *fn = "boxfileloadtext";
 
     FILE *infile = fopen( filename, "r" );
     if( infile == NULL ) {
@@ -216,9 +216,37 @@ vbfileloadtext (
 }
 
 
+union VBOX4BYTES
+boxfilesigtofb (
+    const char sig[4] // such as {'v','b','o','x'}
+)
+{
+    union VBOX4BYTES fb;
+    fb.c4[0] = (int8_t)sig[0];
+    fb.c4[1] = (int8_t)sig[1];
+    fb.c4[2] = (int8_t)sig[2];
+    fb.c4[3] = (int8_t)sig[3];
+    return fb;
+}
+
+
+uint32_t
+boxfilesigval (
+    const char sig[4] // such as {'v','b','o','x'}
+)
+{
+    return
+        ((uint32_t)sig[3] & 0xff) << 24 |
+        ((uint32_t)sig[2] & 0xff) << 16 |
+        ((uint32_t)sig[1] & 0xff) << 8 |
+        ((uint32_t)sig[0] & 0xff)
+    ;
+}
+
+
 inline extern
 union VBOX4BYTES
-vbfilereversebytes (
+boxfilereversebytes (
     const union VBOX4BYTES in
 )
 // reverses the byte-order of four bytes
@@ -234,8 +262,9 @@ vbfilereversebytes (
 }
 
 
+inline extern
 void
-vbfilechecksum (
+boxfilechecksum (
     uint32_t *checksum,
     union VBOX4BYTES fb
 )
@@ -249,8 +278,9 @@ vbfilechecksum (
 }
 
 
+inline extern
 int
-vbfilewrite4bytes (
+boxfilewrite4bytes (
     const char *fn,
     FILE *outfile,
     const char *filename,
@@ -268,15 +298,16 @@ vbfilewrite4bytes (
         return 0;
     }
 
-    vbfilechecksum( checksum, fb );
+    boxfilechecksum( checksum, fb );
 
     // success
     return 1;
 }
 
 
+inline extern
 int
-vbfilewrite4bytesreversed (
+boxfilewrite4bytesreversed (
     const char *fn,
     FILE *outfile,
     const char *filename,
@@ -288,7 +319,7 @@ vbfilewrite4bytesreversed (
 // on error: returns 0
 // on success: returns non-zero
 {
-    union VBOX4BYTES rb = vbfilereversebytes( fb );
+    union VBOX4BYTES rb = boxfilereversebytes( fb );
 
     if( 4 != fwrite( &rb, 1, 4, outfile ) ) {
         fprintf( stderr, "%s: error writing to file %s at position %ld\n",
@@ -296,7 +327,7 @@ vbfilewrite4bytesreversed (
         return 0;
     }
 
-    vbfilechecksum( checksum, rb );
+    boxfilechecksum( checksum, rb );
 
     // success
     return 1;
@@ -304,15 +335,16 @@ vbfilewrite4bytesreversed (
 
 
 int
-vbfilestorebinary (
+boxfilestorebinary (
     const char *filename,
+    const char signature[4], // example: {'v','b','o','x'} for a velocity box
     const struct FLOATBOX box
 )
 // see VBOXFORMAT.txt
 // on error: returns 0
 // on success: returns non-zero
 {
-    const char *fn = "vbfilestorebinary";
+    const char *fn = "boxfilestorebinary";
 
     if( box.flat == NULL ) {
         fprintf( stderr, "%s: provided box is empty\n", fn );
@@ -333,11 +365,8 @@ vbfilestorebinary (
     uint32_t checksum = 0;
 
     // write signature
-    fb.c4[0] = (int8_t)'v';
-    fb.c4[1] = (int8_t)'b';
-    fb.c4[2] = (int8_t)'o';
-    fb.c4[3] = (int8_t)'x';
-    if( !vbfilewrite4bytes( fn, outfile, filename, fb, &checksum ) ) {
+    fb = boxfilesigtofb( signature );
+    if( !boxfilewrite4bytes( fn, outfile, filename, fb, &checksum ) ) {
         fclose( outfile );
         return 0;
     }
@@ -346,17 +375,18 @@ vbfilestorebinary (
     long numvals = p3dcalcvolume( box.size );
 
     // detect endianness of this machine: choose path accordingly
+    uint32_t sigval = boxfilesigval( signature );
     int err = 0;
-    if( fb.u32 == 0x786f6276 ) {
+    if( fb.u32 == sigval ) {
         // little-endian: write values directly
 
         // ox, oy, oz
         fb.i32 = box.omin.x;
-        err |= !vbfilewrite4bytes( fn, outfile, filename, fb, &checksum );
+        err |= !boxfilewrite4bytes( fn, outfile, filename, fb, &checksum );
         fb.i32 = box.omin.y;
-        err |= !vbfilewrite4bytes( fn, outfile, filename, fb, &checksum );
+        err |= !boxfilewrite4bytes( fn, outfile, filename, fb, &checksum );
         fb.i32 = box.omin.z;
-        err |= !vbfilewrite4bytes( fn, outfile, filename, fb, &checksum );
+        err |= !boxfilewrite4bytes( fn, outfile, filename, fb, &checksum );
 
         // check for errors
         if( err ) {
@@ -366,11 +396,11 @@ vbfilestorebinary (
 
         // nx, ny, nz
         fb.i32 = box.size.x;
-        err |= !vbfilewrite4bytes( fn, outfile, filename, fb, &checksum );
+        err |= !boxfilewrite4bytes( fn, outfile, filename, fb, &checksum );
         fb.i32 = box.size.y;
-        err |= !vbfilewrite4bytes( fn, outfile, filename, fb, &checksum );
+        err |= !boxfilewrite4bytes( fn, outfile, filename, fb, &checksum );
         fb.i32 = box.size.z;
-        err |= !vbfilewrite4bytes( fn, outfile, filename, fb, &checksum );
+        err |= !boxfilewrite4bytes( fn, outfile, filename, fb, &checksum );
 
         // check for errors
         if( err ) {
@@ -381,7 +411,7 @@ vbfilestorebinary (
         // flat array of velocities
         for( long i = 0; i < numvals; i++ ) {
             fb.f32 = box.flat[i];
-            if( !vbfilewrite4bytes( fn, outfile, filename, fb, &checksum ) ) {
+            if( !boxfilewrite4bytes( fn, outfile, filename, fb, &checksum ) ) {
                 fclose( outfile );
                 return 0;
             }
@@ -389,29 +419,29 @@ vbfilestorebinary (
 
         // write final checksum value
         fb.u32 = checksum;
-        if( !vbfilewrite4bytes( fn, outfile, filename, fb, &checksum ) ) {
+        if( !boxfilewrite4bytes( fn, outfile, filename, fb, &checksum ) ) {
             fclose( outfile );
             return 0;
         }
-
-    } else {
+    }
+    else {
         // big-endian: must reverse byte order before writing
 
         // ox, oy, oz
         fb.i32 = box.omin.x;
-        err |= !vbfilewrite4bytesreversed( fn, outfile, filename, fb, &checksum );
+        err |= !boxfilewrite4bytesreversed( fn, outfile, filename, fb, &checksum );
         fb.i32 = box.omin.y;
-        err |= !vbfilewrite4bytesreversed( fn, outfile, filename, fb, &checksum );
+        err |= !boxfilewrite4bytesreversed( fn, outfile, filename, fb, &checksum );
         fb.i32 = box.omin.z;
-        err |= !vbfilewrite4bytesreversed( fn, outfile, filename, fb, &checksum );
+        err |= !boxfilewrite4bytesreversed( fn, outfile, filename, fb, &checksum );
 
         // nx, ny, nz
         fb.i32 = box.size.x;
-        err |= !vbfilewrite4bytesreversed( fn, outfile, filename, fb, &checksum );
+        err |= !boxfilewrite4bytesreversed( fn, outfile, filename, fb, &checksum );
         fb.i32 = box.size.y;
-        err |= !vbfilewrite4bytesreversed( fn, outfile, filename, fb, &checksum );
+        err |= !boxfilewrite4bytesreversed( fn, outfile, filename, fb, &checksum );
         fb.i32 = box.size.z;
-        err |= !vbfilewrite4bytesreversed( fn, outfile, filename, fb, &checksum );
+        err |= !boxfilewrite4bytesreversed( fn, outfile, filename, fb, &checksum );
 
         // check for errors
         if( err ) {
@@ -422,7 +452,7 @@ vbfilestorebinary (
         // flat array of velocities
         for( long i = 0; i < numvals; i++ ) {
             fb.f32 = box.flat[i];
-            if( !vbfilewrite4bytesreversed( fn, outfile, filename, fb, &checksum ) ) {
+            if( !boxfilewrite4bytesreversed( fn, outfile, filename, fb, &checksum ) ) {
                 fclose( outfile );
                 return 0;
             }
@@ -430,7 +460,7 @@ vbfilestorebinary (
 
         // write final checksum value
         fb.u32 = checksum;
-        if( !vbfilewrite4bytesreversed( fn, outfile, filename, fb, &checksum ) ) {
+        if( !boxfilewrite4bytesreversed( fn, outfile, filename, fb, &checksum ) ) {
             fclose( outfile );
             return 0;
         }
@@ -443,8 +473,9 @@ vbfilestorebinary (
 }
 
 
+inline extern
 int
-vbfileread4bytes (
+boxfileread4bytes (
     const char *fn,
     FILE *infile,
     const char *filename,
@@ -462,15 +493,16 @@ vbfileread4bytes (
         return 0;
     }
 
-    vbfilechecksum( checksum, *fb );
+    boxfilechecksum( checksum, *fb );
 
     // success
     return 1;
 }
 
 
+inline extern
 int
-vbfileread4bytesreversed (
+boxfileread4bytesreversed (
     const char *fn,
     FILE *infile,
     const char *filename,
@@ -490,24 +522,25 @@ vbfileread4bytesreversed (
         return 0;
     }
 
-    vbfilechecksum( checksum, rb );
+    boxfilechecksum( checksum, rb );
 
-    *fb = vbfilereversebytes( rb );
+    *fb = boxfilereversebytes( rb );
 
     return 1;
 }
 
 
 int                                 // returns: 0 on error, else non-0
-vbfileopenbinary (
-    struct VBOXOPENFILE *vbfile,    // out: stores metadata of open file
-    const char *filename            // in: see VBOXFORMAT.txt for details
+boxfileopenbinary (
+    struct BOXOPENFILE *boxfile,    // out: stores metadata of open file
+    const char *filename,           // in: see VBOXFORMAT.txt for details
+    const char signature[4]         // example: {'v','b','o','x'} for a velocity box
 )
-// note: when done with 'vbfile', be sure to run vbfileclosebinary( &vbfile )
+// note: when done with 'boxfile', be sure to run boxfileclosebinary( &boxfile )
 {
-    const char *fn = "vbfileopenbinary";
+    const char *fn = "boxfileopenbinary";
 
-    vbfile->file = NULL;
+    boxfile->file = NULL;
 
     FILE *infile = fopen( filename, "rb" );
     if( infile == NULL ) {
@@ -522,17 +555,24 @@ vbfileopenbinary (
     uint32_t checksum = 0;
 
     // read signature
-    if( !vbfileread4bytes( fn, infile, filename, &fb, &checksum ) ) {
-        fprintf( stderr, "%s: input file %s is not a vbox binary file, or is corrupted\n",
+    if( !boxfileread4bytes( fn, infile, filename, &fb, &checksum ) ) {
+        fprintf( stderr, "%s: input file %s is not a box file, or is corrupted\n",
             fn, filename );
         fclose( infile );
         return 0;
     }
-    if( fb.c4[0] != (int8_t)'v' || fb.c4[1] != (int8_t)'b'
-    || fb.c4[2] != (int8_t)'o' || fb.c4[3] != (int8_t)'x' ) {
-        // signature doesn't match
-        fprintf( stderr, "%s: input file %s is not a vbox binary file, or is corrupted\n",
-            fn, filename );
+    union VBOX4BYTES fbsigexp = boxfilesigtofb( signature );
+    if( fb.u32 != fbsigexp.u32 ) {
+        // file signature doesn't match expected signature
+        fprintf (
+            stderr,
+            "%s: input file %s doesn't have the correct signature, and may be corrupt:\n"
+            "\t    file signature: \"%c%c%c%c\"\n"
+            "\texpected signature: \"%c%c%c%c\"\n",
+            fn, filename,
+            fb.c4[0], fb.c4[1], fb.c4[2], fb.c4[3],
+            fbsigexp.c4[0], fbsigexp.c4[1], fbsigexp.c4[2], fbsigexp.c4[3]
+        );
         fclose( infile );
         return 0;
     }
@@ -547,42 +587,42 @@ vbfileopenbinary (
     int err = 0;
 
     // detect endianness of this machine: choose path accordingly
-    if( (vbfile->is_little_endian = (fb.u32 == 0x786f6276)) ) { // 'vbox'
+    if( (boxfile->is_little_endian = (fb.u32 == boxfilesigval( signature ))) ) { // 'vbox'
         // little-endian: read values directly
 
         // ox, oy, oz
-        err |= !vbfileread4bytes( fn, infile, filename, &fb, &checksum );
+        err |= !boxfileread4bytes( fn, infile, filename, &fb, &checksum );
         ox = fb.i32;
-        err |= !vbfileread4bytes( fn, infile, filename, &fb, &checksum );
+        err |= !boxfileread4bytes( fn, infile, filename, &fb, &checksum );
         oy = fb.i32;
-        err |= !vbfileread4bytes( fn, infile, filename, &fb, &checksum );
+        err |= !boxfileread4bytes( fn, infile, filename, &fb, &checksum );
         oz = fb.i32;
 
         // nx, ny, nz
-        err |= !vbfileread4bytes( fn, infile, filename, &fb, &checksum );
+        err |= !boxfileread4bytes( fn, infile, filename, &fb, &checksum );
         nx = fb.i32;
-        err |= !vbfileread4bytes( fn, infile, filename, &fb, &checksum );
+        err |= !boxfileread4bytes( fn, infile, filename, &fb, &checksum );
         ny = fb.i32;
-        err |= !vbfileread4bytes( fn, infile, filename, &fb, &checksum );
+        err |= !boxfileread4bytes( fn, infile, filename, &fb, &checksum );
         nz = fb.i32;
     }
     else {
         // big-endian: reverse bytes after reading
 
         // ox, oy, oz
-        err |= !vbfileread4bytesreversed( fn, infile, filename, &fb, &checksum );
+        err |= !boxfileread4bytesreversed( fn, infile, filename, &fb, &checksum );
         ox = fb.i32;
-        err |= !vbfileread4bytesreversed( fn, infile, filename, &fb, &checksum );
+        err |= !boxfileread4bytesreversed( fn, infile, filename, &fb, &checksum );
         oy = fb.i32;
-        err |= !vbfileread4bytesreversed( fn, infile, filename, &fb, &checksum );
+        err |= !boxfileread4bytesreversed( fn, infile, filename, &fb, &checksum );
         oz = fb.i32;
 
         // nx, ny, nz
-        err |= !vbfileread4bytesreversed( fn, infile, filename, &fb, &checksum );
+        err |= !boxfileread4bytesreversed( fn, infile, filename, &fb, &checksum );
         nx = fb.i32;
-        err |= !vbfileread4bytesreversed( fn, infile, filename, &fb, &checksum );
+        err |= !boxfileread4bytesreversed( fn, infile, filename, &fb, &checksum );
         ny = fb.i32;
-        err |= !vbfileread4bytesreversed( fn, infile, filename, &fb, &checksum );
+        err |= !boxfileread4bytesreversed( fn, infile, filename, &fb, &checksum );
         nz = fb.i32;
     }
 
@@ -595,13 +635,13 @@ vbfileopenbinary (
     }
 
     // as appropriate, store metadata from header
-    vbfile->file = infile;
-    vbfile->datapos = ftell( infile );
-    vbfile->min = p3d( ox, oy, oz );
-    vbfile->size = p3d( nx, ny, nz );
-    vbfile->max = p3daddp3d( vbfile->min, p3daddval( vbfile->size, -1 ) );
-    vbfile->checksum = checksum;
-    vbfile->filename = filename;
+    boxfile->file = infile;
+    boxfile->datapos = ftell( infile );
+    boxfile->min = p3d( ox, oy, oz );
+    boxfile->size = p3d( nx, ny, nz );
+    boxfile->max = p3daddp3d( boxfile->min, p3daddval( boxfile->size, -1 ) );
+    boxfile->checksum = checksum;
+    boxfile->filename = filename;
 
     // success
     return 1;
@@ -609,26 +649,27 @@ vbfileopenbinary (
 
 
 void
-vbfileclosebinary (
-    struct VBOXOPENFILE *vbfile
+boxfileclosebinary (
+    struct BOXOPENFILE *boxfile
 )
 {
-    if( vbfile == NULL || vbfile->file == NULL ) return;
-    fclose( vbfile->file );
-    vbfile->file = NULL;
+    if( boxfile == NULL || boxfile->file == NULL ) return;
+    fclose( boxfile->file );
+    boxfile->file = NULL;
 }
 
 
 int
-vbfileloadbinary (
+boxfileloadbinary (
     struct FLOATBOX *box,
+    const char signature[4], // example: {'v','b','o','x'} for a velocity box
     const char *filename
 )
 // see VBOXFORMAT.txt
 // on error: returns 0
 // on success: returns non-zero
 {
-    const char *fn = "vbfileloadbinary";
+    const char *fn = "boxfileloadbinary";
 
     if( box == NULL ) {
         fprintf( stderr, "%s: error: received a null-pointer instead of a FLOATBOX*\n",
@@ -637,16 +678,16 @@ vbfileloadbinary (
     }
 
     // file metadata
-    struct VBOXOPENFILE vbfile;
+    struct BOXOPENFILE boxfile;
 
     // open file and read header
-    if( !vbfileopenbinary( &vbfile, filename ) ) return 0;
+    if( !boxfileopenbinary( &boxfile, signature, filename ) ) return 0;
 
     // prepare FLOATBOX to store the contents of the file
-    if ( !boxalloc( box, vbfile.min, vbfile.max, vbfile.min, vbfile.max ) ) {
+    if ( !boxalloc( box, boxfile.min, boxfile.max, boxfile.min, boxfile.max ) ) {
         fprintf( stderr, "%s: unable to allocate memory for a FLOATBOX with"
-            "dimensions: %d x %d x %d\n", fn, vbfile.size.x, vbfile.size.y, vbfile.size.z );
-        vbfileclosebinary( &vbfile );
+            "dimensions: %d x %d x %d\n", fn, boxfile.size.x, boxfile.size.y, boxfile.size.z );
+        boxfileclosebinary( &boxfile );
         return 0;
     }
     
@@ -658,13 +699,13 @@ vbfileloadbinary (
         long numvals = p3dcalcvolume( box->size );
         uint32_t stored_checksum;
 
-        if( vbfile.is_little_endian ) {
+        if( boxfile.is_little_endian ) {
             // read floats
             for( long i = 0; i < numvals; i++ ) {
-                if( !vbfileread4bytes( fn, vbfile.file, filename, &fb, &vbfile.checksum ) ) {
+                if( !boxfileread4bytes( fn, boxfile.file, filename, &fb, &boxfile.checksum ) ) {
                     fprintf( stderr, "%s: error reading value at byte position %ld"
-                        " in %s\n", fn, ftell( vbfile.file ), filename );
-                    vbfileclosebinary( &vbfile );
+                        " in %s\n", fn, ftell( boxfile.file ), filename );
+                    boxfileclosebinary( &boxfile );
                     boxfree( box );
                     return 0;
                 }
@@ -672,10 +713,10 @@ vbfileloadbinary (
             }
             // read stored checksum value
             uint32_t dummy_checksum;
-            if( !vbfileread4bytes( fn, vbfile.file, filename, &fb, &dummy_checksum ) ) {
+            if( !boxfileread4bytes( fn, boxfile.file, filename, &fb, &dummy_checksum ) ) {
                 fprintf( stderr, "%s: error reading stored checksum value from %s\n",
                     fn, filename );
-                vbfileclosebinary( &vbfile );
+                boxfileclosebinary( &boxfile );
                 boxfree( box );
                 return 0;
             }
@@ -685,13 +726,13 @@ vbfileloadbinary (
             // read floats
             for( long i = 0; i < numvals; i++ ) {
                 if (
-                    !vbfileread4bytesreversed (
-                        fn, vbfile.file, filename, &fb, &vbfile.checksum
+                    !boxfileread4bytesreversed (
+                        fn, boxfile.file, filename, &fb, &boxfile.checksum
                     )
                 ) {
                     fprintf( stderr, "%s: error reading value at byte position %ld"
-                        " in %s\n", fn, ftell( vbfile.file ), filename );
-                    vbfileclosebinary( &vbfile );
+                        " in %s\n", fn, ftell( boxfile.file ), filename );
+                    boxfileclosebinary( &boxfile );
                     boxfree( box );
                     return 0;
                 }
@@ -699,10 +740,10 @@ vbfileloadbinary (
             }
             // read stored checksum value
             uint32_t dummy_checksum;
-            if( !vbfileread4bytesreversed( fn, vbfile.file, filename, &fb, &dummy_checksum ) ) {
+            if( !boxfileread4bytesreversed( fn, boxfile.file, filename, &fb, &dummy_checksum ) ) {
                 fprintf( stderr, "%s: error reading stored checksum value from %s\n",
                     fn, filename );
-                vbfileclosebinary( &vbfile );
+                boxfileclosebinary( &boxfile );
                 boxfree( box );
                 return 0;
             }
@@ -710,11 +751,11 @@ vbfileloadbinary (
         }
         
         // done reading file
-        vbfileclosebinary( &vbfile );
+        boxfileclosebinary( &boxfile );
 
-        // verify that computed vbfile.checksum matches stored checksum:
+        // verify that computed boxfile.checksum matches stored checksum:
         // else something is corrupt
-        if( vbfile.checksum != stored_checksum ) {
+        if( boxfile.checksum != stored_checksum ) {
             fprintf( stderr, "%s: checksum mismatch in input file %s: suspect corruption\n",
                 fn, filename );
             boxfree( box );
@@ -728,41 +769,41 @@ vbfileloadbinary (
 
 
 int
-vbfileloadbinarysubset (
+boxfileloadbinarysubset (
     struct FLOATBOX *box,            // will be prepared by this function
     const struct POINT3D omin,       // outer minimum in file coordinates
     const struct POINT3D omax,       // outer maximum in file coordinates
     const struct POINT3D imin,       // inner minimum in file coordinates
     const struct POINT3D imax,       // inner maximum in file coordinates
-    const struct VBOXOPENFILE vbfile // must already be open: this function doesn't close it!
+    const struct BOXOPENFILE boxfile // must already be open: this function doesn't close it!
 )
 // on error: returns 0 (either i/o error or allocation failure or something out-of-bounds)
 // on success: returns non-0
-// note: remember to close vbfile when you're done with it!
+// note: remember to close boxfile when you're done with it!
 {
     const long valsize = sizeof(*box->flat);
-    const char *fn = "vbfileloadbinarysubset";
+    const char *fn = "boxfileloadbinarysubset";
 
     if( box == NULL ) {
         fprintf( stderr, "%s: error: received a null-pointer instead of a FLOATBOX*\n",
             fn );
         return 0;
     }
-    if( vbfile.file == NULL ) {
+    if( boxfile.file == NULL ) {
         fprintf( stderr, "%s: error: source file parameter is not open\n", fn );
         return 0;
     }
 
     // check bounds
-    if( p3disless( omin, vbfile.min ) || p3dismore( omax, vbfile.max ) ) {
+    if( p3disless( omin, boxfile.min ) || p3dismore( omax, boxfile.max ) ) {
         fprintf(
             stderr, "%s: error: file %s doesn't contain the requested subset!\n",
-            fn, vbfile.filename
+            fn, boxfile.filename
         );
         fprintf (
             stderr, "file: (%d, %d, %d) to (%d, %d, %d)\n",
-            vbfile.min.x, vbfile.min.y, vbfile.min.z,
-            vbfile.max.x, vbfile.max.y, vbfile.max.z
+            boxfile.min.x, boxfile.min.y, boxfile.min.z,
+            boxfile.max.x, boxfile.max.y, boxfile.max.z
         );
         fprintf (
             stderr, "requested subset: (%d, %d, %d) to (%d, %d, %d)\n",
@@ -782,15 +823,15 @@ vbfileloadbinarysubset (
     if( !boxalloc( box, omin, omax, imin, imax ) ) {
         fprintf(
             stderr, "%s: unable to allocate memory for a FLOATBOX with"
-            "dimension: %d x %d x %d\n", fn, vbfile.size.x, vbfile.size.y, vbfile.size.z
+            "dimension: %d x %d x %d\n", fn, boxfile.size.x, boxfile.size.y, boxfile.size.z
         );
         return 0;
     }
 
     // compute file strides (long because fseek uses long)
     long stridez = 1 * valsize; // if you change this, you'll need to add an fseek below
-    long stridey = vbfile.size.z * stridez;
-    long stridex = vbfile.size.y * stridey;
+    long stridey = boxfile.size.z * stridez;
+    long stridex = boxfile.size.y * stridey;
 
     // this union lets us keep track of checksums and do endianness conversion
     union VBOX4BYTES fb;
@@ -799,24 +840,24 @@ vbfileloadbinarysubset (
     uint32_t dummy;
 
     // use different read function depending on machine endianness
-    if( vbfile.is_little_endian ) {
-        // little-endian: must use vbfileread4bytes(..)
+    if( boxfile.is_little_endian ) {
+        // little-endian: must use boxfileread4bytes(..)
         for( int x = omin.x; x <= omax.x; x++ ) {
             for( int y = omin.y; y <= omax.y; y++ ) {
                 // seek to beginning of this z-strip in the file
                 fseek (
-                    vbfile.file,
-                    vbfile.datapos +
-                    (x - vbfile.min.x) * stridex +
-                    (y - vbfile.min.y) * stridey +
-                    (omin.z - vbfile.min.z) * stridez,
+                    boxfile.file,
+                    boxfile.datapos +
+                    (x - boxfile.min.x) * stridex +
+                    (y - boxfile.min.y) * stridey +
+                    (omin.z - boxfile.min.z) * stridez,
                     SEEK_SET
                 );
                 // read one z-strip
                 for( int z = omin.z; z <= omax.z; z++ ) {
-                    if( !vbfileread4bytes( fn, vbfile.file, vbfile.filename, &fb, &dummy ) ) {
+                    if( !boxfileread4bytes( fn, boxfile.file, boxfile.filename, &fb, &dummy ) ) {
                         fprintf( stderr, "%s: error reading value at byte position %ld"
-                            " in %s\n", fn, ftell( vbfile.file ), vbfile.filename );
+                            " in %s\n", fn, ftell( boxfile.file ), boxfile.filename );
                         boxfree( box );
                         return 0;
                     }
@@ -827,27 +868,27 @@ vbfileloadbinarysubset (
         }
     }
     else {
-        // big-endian: must use vbfileread4bytesreversed(..)
+        // big-endian: must use boxfileread4bytesreversed(..)
         for( int x = omin.x; x <= omax.x; x++ ) {
             for( int y = omin.y; y <= omax.y; y++ ) {
                 // seek to beginning of this z-strip in the file
                 fseek (
-                    vbfile.file,
-                    vbfile.datapos +
-                    (x - vbfile.min.x) * stridex +
-                    (y - vbfile.min.y) * stridey +
-                    (omin.z - vbfile.min.z) * stridez,
+                    boxfile.file,
+                    boxfile.datapos +
+                    (x - boxfile.min.x) * stridex +
+                    (y - boxfile.min.y) * stridey +
+                    (omin.z - boxfile.min.z) * stridez,
                     SEEK_SET
                 );
                 // read one z-strip
                 for( int z = omin.z; z <= omax.z; z++ ) {
                     if (
-                        !vbfileread4bytesreversed (
-                            fn, vbfile.file, vbfile.filename, &fb, &dummy
+                        !boxfileread4bytesreversed (
+                            fn, boxfile.file, boxfile.filename, &fb, &dummy
                         )
                     ) {
                         fprintf( stderr, "%s: error reading value at byte position %ld"
-                            " in %s\n", fn, ftell( vbfile.file ), vbfile.filename );
+                            " in %s\n", fn, ftell( boxfile.file ), boxfile.filename );
                         boxfree( box );
                         return 0;
                     }
