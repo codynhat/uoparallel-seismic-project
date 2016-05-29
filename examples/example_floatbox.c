@@ -32,6 +32,24 @@ int main()
 
     puts("");
 
+    // test boxsetall(..)
+    puts( "testing boxsetall(..):" );
+    {
+        const float val = 1.7;
+        puts( "\tcalling boxsetall(..)..." );
+        boxsetall( box, val );
+        puts( "\tchecking values..." );
+        for( long i = 0; i <= box.offset.m; i++ ) {
+            if( box.flat[i] != val ) {
+                printf( "boxsetall: expected != stored at index %lu\n", i );
+                exit(0);
+            }
+        }
+    }
+    puts( "\tsuccess!" );
+
+    puts("");
+
     // give each element a unique value so we can check other functions
     puts( "directly setting values of box.flat[]..." );
     for( long i = 0; i <= box.offset.m; i++ ) {
@@ -48,8 +66,8 @@ int main()
         for( int x = 0; x < box.size.x; x++ ) {
             for( int y = 0; y < box.size.y; y++ ) {
                 for( int z = 0; z < box.size.z; z++ ) {
-                    float expected = (float)i;
-                    struct POINT3D pt = {x, y, z};
+                    const float expected = (float)i;
+                    const struct POINT3D pt = {x, y, z};
                     float stored;
                     // boxgetlocal
                     stored = boxgetlocal( box, pt );
@@ -84,8 +102,8 @@ int main()
         for( int x = box.omin.x; x <= box.omax.x; x++ ) {
             for( int y = box.omin.y; y <= box.omax.y; y++ ) {
                 for( int z = box.omin.z; z <= box.omax.z; z++ ) {
-                    float expected = (float)i;
-                    struct POINT3D pt = {x, y, z};
+                    const float expected = (float)i;
+                    const struct POINT3D pt = {x, y, z};
                     float stored;
                     // boxgetglobal
                     stored = boxgetglobal( box, pt );
@@ -121,8 +139,8 @@ int main()
         for( int x = 0; x < box.size.x; x++ ) {
             for( int y = 0; y < box.size.y; y++ ) {
                 for( int z = 0; z < box.size.z; z++ ) {
-                    float expected = (float)i;
-                    struct POINT3D pt = p3dsubp3d( p3d(x, y, z), box.imin );
+                    const float expected = (float)i;
+                    const struct POINT3D pt = p3dsubp3d( p3d(x, y, z), box.imin );
                     float stored;
                     // boxgetinner
                     stored = boxgetinner( box, pt );
@@ -153,6 +171,8 @@ int main()
     puts( "freeing box..." );
     boxfree( &box );
     puts( "all done" );
+
+    return 0;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
