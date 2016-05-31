@@ -79,7 +79,7 @@ int main(int argc, char* argv[]) {
   taskid=0;
   tag=1;
   int mmm;
-  struct timeval t1, t2,t3;
+  struct timeval t1, t2,t3, sweep_begin, sweep_end;
   double elapsedTime;
   gettimeofday(&t3, NULL);
 
@@ -433,6 +433,7 @@ if (taskid==0)  gettimeofday(&t1, NULL); // time counting
   int new_changeS[4], new_changeR[4];
   while (anychange) {
 //for (m=0;m<5;m++){
+    gettimeofday(&sweep_begin, NULL);
     numsweeps++;
     anychange = 0;
     //for (s=0; s<numstart; s++) {
@@ -446,7 +447,12 @@ if (taskid==0)  gettimeofday(&t1, NULL); // time counting
         new_changeS[taskid]=anychange;
         //if (anychange>0) MPI_Bcast(&anychange, 1, MPI_INT, taskid, MPI_COMM_WORLD);
         //if (numsweeps<4) anychange=1;
+        gettimeofday(&sweep_end, NULL);
+        elapsedTime = (sweep_end.tv_sec - sweep_begin.tv_sec) + (sweep_end.tv_usec - sweep_begin.tv_usec) / 1000000.0;
+
         printf("sweep %d finished by task: %d for >>> start point %d: anychange = %d\n",  numsweeps,taskid, s, changed[s]);
+        printf("Time: %f\n", elapsedTime);
+
         //if (numsweeps<4) anychange=1;
 
 
@@ -671,8 +677,8 @@ int sweepXYZ(int nx, int ny, int nz, int s, int starstart, int starstop) {
   int	change = 0;
   float	delay = 0.0, tt = 0.0, tto = 0.0;
 
-//  for (i=0; i<nx; i++) {
-//    for (j=0; j<ny; j++) {
+#pragma omp parallel for private(oi, oj, ok, i, j, k, l, tt, tto, delay) \ 
+         default(shared) reduction(+:change) schedule(dynamic) num_threads(16)
   for (i=startinew; i<nx-stopinew; i++) {
     for (j=startjnew; j<ny-stopjnew; j++) {
       for (k=0; k<nz; k++) {
