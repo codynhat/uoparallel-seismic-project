@@ -34,7 +34,7 @@
 #include <math.h>
 #include "mpi.h"
 #include <omp.h>
-#include <sys/time.h>  
+#include <sys/time.h>
 
 
 #define	FSRADIUSMAX	7	/* maximum radius forward star */
@@ -162,7 +162,7 @@ displacements[1] = intex;
 displacements[2] = intex+intex;
 displacements[3] = intex+intex+intex;
 MPI_Type_struct(4, blocks, displacements, types, &fstype);
-MPI_Type_commit(&fstype); 
+MPI_Type_commit(&fstype);
 /*
 int blocks1[2]={1,12};
 MPI_Datatype types1[2]={MPI_FLOAT,MPI_FLOAT};
@@ -174,7 +174,7 @@ displacements1[0] = 0;
 displacements1[1] = floatex;
 
 MPI_Type_struct(2, blocks1, displacements1, types1, &modeltype);
-MPI_Type_commit(&modeltype); 
+MPI_Type_commit(&modeltype);
 /*
 int blocks2[3]={1,1,1};
 MPI_Datatype types2[3]={MPI_INT,MPI_INT,MPI_INT};
@@ -205,7 +205,7 @@ MPI_Type_commit(&starttype); */
 	oldtypes[1] = MPI_FLOAT;
 	blockcounts[1] = 1;
    MPI_Type_struct(2, blockcounts, offsets, oldtypes, &fstype);
-   MPI_Type_commit(&fstype); 
+   MPI_Type_commit(&fstype);
 
 
 
@@ -216,7 +216,7 @@ MPI_Type_commit(&starttype); */
 	oldtypes1[0] = MPI_FLOAT;
 	blockcounts1[0] =STARTMAX+1;
    MPI_Type_struct(1, blockcounts1, offsets1, oldtypes1, &modeltype);
-   MPI_Type_commit(&modeltype); 
+   MPI_Type_commit(&modeltype);
 
 	//offset1 = 0;
 	//oldtype1 = MPI_INT;
@@ -308,7 +308,7 @@ printf("\ntask number : %d \n", taskid);
       fsindex[numradius] = i;
       numradius++;
     }
-    fs[i].d = delta * fs[i].d; 
+    fs[i].d = delta * fs[i].d;
   }
   printf("Forward star offsets read\n");
   //printf("...... Monil Forward star offsets %i %i %i", fs[starsize].i, &fs[starsize].j, &fs[starsize].k);
@@ -335,6 +335,8 @@ printf("\ntask number : %d \n", taskid);
   printf("Starting points read\n");
 
 
+////////////////////////// Send the starting points //////////////////////////////
+
 
 //start_new=start[0];
 //if( numtasks>1) {
@@ -350,13 +352,19 @@ printf("\ntask number : %d \n", taskid);
 } //if ends here
 else
 {//STARTMAX
+
+////////////////////////// Receive the starting points //////////////////////////////
+
 printf("\ntask number : %d \n", taskid);
 MPI_Recv(&start, STARTMAX, starttype, 0, tag, MPI_COMM_WORLD, &stat);
 //MPI_Recv(&model, 250*250*250, modeltype, 0, tag, MPI_COMM_WORLD, &stat);
 //MPI_Recv(&fs, FSMAX, fstype, 0, tag, MPI_COMM_WORLD, &stat);
 printf("Taskid : %d: starting point %d: %d %d %d\n", taskid, start[taskid].i, start[taskid].j, start[taskid].k);
 
-}  
+}
+
+////////////////////////// Broadcast forward start and entire model //////////////////////////////
+
 MPI_Bcast(fs, FSMAX, fstype, 0, MPI_COMM_WORLD);
 MPI_Bcast(model, 250*250*250, modeltype, 0, MPI_COMM_WORLD);
 MPI_Barrier(MPI_COMM_WORLD);
@@ -373,25 +381,29 @@ for(task=0;task<numOfTasks;task++){
 
 if (task==taskid){
    //nx = 127+1; ny = 127+1; nz = 51;
-    nx = sizeOfTasks[taskid][0]; 
-    ny = sizeOfTasks[taskid][1]; 
+    nx = sizeOfTasks[taskid][0];
+    ny = sizeOfTasks[taskid][1];
     nz = sizeOfTasks[taskid][2];
    //printf("Velocity model dimensions: %i %i %i\n",nx, ny, nz);
    //int ir, jr, kr;   /* read indices */
    starti=sizeOfTasks[taskid][3];
    startj=sizeOfTasks[taskid][4];
 
+////////////////////////// Place just the data needed for my node in model_new //////////////////////////////
+
    printf("for Task : %dVelocity model dimensions: %i %i %i %d %d\n",taskid, nx, ny, nz, starti,startj);
    for (i=starti; i<nx; i++) {
      for (j=startj; j<ny; j++) {
        for (k=0; k<nz; k++) {
-           model_new[i-starti][j-startj][k].v=model[i][j][k].v; 
+           model_new[i-starti][j-startj][k].v=model[i][j][k].v;
  	for (s=0; s<numstart; s++) {
  	  model_new[i-starti][j-startj][k].tt[s]=model[i][j][k].tt[s];
  	 }
        }
      }
    }
+
+////////////////////////// Set new start offsets //////////////////////////////
 nx = sizeOfTasks[taskid][0]-sizeOfTasks[taskid][3];
 ny = sizeOfTasks[taskid][1]-sizeOfTasks[taskid][4];
 nz = 51;
@@ -413,7 +425,7 @@ if (taskid==0)  gettimeofday(&t1, NULL); // time counting
 
 
 
-  anychange = 1;  
+  anychange = 1;
   mmm=0;
   s=0;
   tag=0;
@@ -440,6 +452,15 @@ if (taskid==0)  gettimeofday(&t1, NULL); // time counting
 
 
 
+////////////////////////// SEND ghost cell data //////////////////////////////
+////////
+////////       for each send ghost cell region
+////////             Get the rank of the neighbor - mpifindneighborrank()
+////////             Get the coordinates for region - mpigetsendcoordinates()
+////////             Get the data at those coordinates
+////////             Send the data to the appropriate rank (non-blocking)
+////////
+//////////////////////////////////////////////////////////////////////////////
 
     reqnumber=0;
     for (send=0; send<16; send++) {
@@ -453,6 +474,9 @@ if (taskid==0)  gettimeofday(&t1, NULL); // time counting
                for (j=communicationMatrix[send][4]; j<communicationMatrix[send][5]+1; j++) {
                   for (k=communicationMatrix[send][6]; k<communicationMatrix[send][7]+1; k++) {
  	             //for (s=0; s<numstart; s++) {
+
+////////////////////////// transferS is send buffer //////////////////////////////
+
  	                transferS[reciever][i-communicationMatrix[send][2]][j-communicationMatrix[send][4]][k].tt[s]=model_new[i][j][k].tt[s];
 //printf("sender: %d, reciever: %d, i %d j %d k %d \n",sender,reciever, i, j, k);
  	             //}
@@ -466,10 +490,22 @@ if (taskid==0)  gettimeofday(&t1, NULL); // time counting
 
         }//for comparing sender and reciever
         // for task
-             
+
       } //sender for ends here
 
 
+
+////////////////////////// RECEIVE ghost cell data, transferR is receive buffer //////////////////////////////
+////////
+////////       for each receive ghost cell region
+////////             Get the rank of the neighbor - mpifindneighborrank()
+////////             Get the coordinates for region - mpigetreceivecoordinates()
+////////             Get the data at those coordinates
+////////             Receive the data from the appropriate rank
+////////                     Non-blocking - separate buffer needed for each region, wait for all to complete
+////////                     Blocking - single buffer needed, but has to wait in order
+////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     for (receive=0; receive<16; receive++) {
         sender= communicationMatrix[receive][0];
@@ -479,8 +515,8 @@ if (taskid==0)  gettimeofday(&t1, NULL); // time counting
              reqnumber++;
 
         }//for comparing sender and reciever
-        
-             
+
+
       } //reciever for ends here
 
 
@@ -489,12 +525,14 @@ if (taskid==0)  gettimeofday(&t1, NULL); // time counting
 
 reqnumber=0;
 
+////////////////////////// Send + receive anychange //////////////////////////////
+
     for(i=0;i<4;i++){
       if (i!=taskid) {
             //MPI_Send(&anychange, 1, MPI_INT, i, tag, MPI_COMM_WORLD);
             MPI_Isend(&new_changeS[taskid], 1, MPI_INT, i, tag, MPI_COMM_WORLD, &reqs[reqnumber]);
            reqnumber++;
-         } 
+         }
     }
     for(i=0;i<4;i++){
       if (i!=taskid){
@@ -502,8 +540,8 @@ reqnumber=0;
        MPI_Irecv(&new_changeR[i], 1, MPI_INT, i, tag, MPI_COMM_WORLD, &reqs[reqnumber]);
        reqnumber++;
       }
-    }    
-//MPI_Recv(&start, STARTMAX, starttype, 0, tag, MPI_COMM_WORLD, &stat); 
+    }
+//MPI_Recv(&start, STARTMAX, starttype, 0, tag, MPI_COMM_WORLD, &stat);
 
 MPI_Waitall(reqnumber, reqs, stats);
 
@@ -516,6 +554,8 @@ MPI_Waitall(reqnumber, reqs, stats);
 int ii=0;
 
 
+////////////////////////// Go through receive buffers and place ghost data in model_new //////////////////////////////
+
     for (receive=0; receive<16; receive++) {
         sender= communicationMatrix[receive][0];
         reciever= communicationMatrix[receive][1];
@@ -527,16 +567,16 @@ ii=0;
                for (j=communicationMatrix[receive][10]; j<communicationMatrix[receive][11]+1; j++) {
                   for (k=communicationMatrix[receive][12]; k<communicationMatrix[receive][13]+1; k++) {
 
-                        //printf (" task : %d, vaule of tt %f \n", taskid,transferR[sender][i-communicationMatrix[receive][8]][j-communicationMatrix[receive][10]][k].tt[s]); 
-                        //ii++; 
+                        //printf (" task : %d, vaule of tt %f \n", taskid,transferR[sender][i-communicationMatrix[receive][8]][j-communicationMatrix[receive][10]][k].tt[s]);
+                        //ii++;
 
                         //printf (" task : %d, vaule of i:%d j:%d k:%d \n", taskid,i,j,k);
-                        model_new[i][j][k].tt[s]=transferR[sender][i-communicationMatrix[receive][8]][j-communicationMatrix[receive][10]][k].tt[s]; 
+                        model_new[i][j][k].tt[s]=transferR[sender][i-communicationMatrix[receive][8]][j-communicationMatrix[receive][10]][k].tt[s];
                         //ii++;
-	             
+
                   }
                }
-             } 
+             }
 //printf("task: %d sender:%d, reciever %d, ii: %d\n",taskid, sender, reciever,ii);
 
         }//for comparing sender and reciever
@@ -691,4 +731,4 @@ int sweepXYZ(int nx, int ny, int nz, int s, int starstart, int starstop) {
   }
   return(change);
 
-} /* end sweepXYZ */ 
+} /* end sweepXYZ */
