@@ -1,15 +1,17 @@
-CC = mpicc
-CFLAGS = -O3
-LIBS = -lm
+CC ?= gcc
+MPI_COMPILE_FLAGS = $(shell mpicc --showme:compile)
+MPI_LINK_FLAGS = $(shell mpicc --showme:link)
 DOCS=../docs
 
-all: sweep-tt-multistart
+PROGS = sweep-tt-multistart
 
-sweep-tt-multistart: sweep-tt-multistart.c
-	$(CC) $(LIBS) -o sweep-tt-multistart $(CFLAGS) sweep-tt-multistart.c
+all: $(PROGS)
+
+$(PROGS) : % : %.c
+	$(CC) $(MPI_COMPILE_FLAGS) $< $(MPI_LINK_FLAGS) -o $@
 
 job: sweep-tt-multistart
 	qsub -q generic run.sh
 
 clean:
-	rm -f run.sh.* output sweep-tt-multistart output.tt *.o
+	$(RM) run.sh.* output $(PROGS) output.tt *.o
