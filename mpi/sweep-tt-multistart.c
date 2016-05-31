@@ -1,6 +1,4 @@
 /********************************************************************************/
-/* vim: set tabstop=2 shiftwidth=2 softtabstop=2 expandtab:
-/*
 /* Given a velocity field v[nx][ny][nz] for a set of points (i,j,k) (where	*/
 /* 0 <= i < nx, 0 <= j < ny, 0 <= k < nz) layed out on a grid with delta unit	*/
 /* distance, compute the minimum travel time, tt[nx][ny][nz][numstart], for all	*/
@@ -687,7 +685,7 @@ int main(int argc, char* argv[]) {
     int	change = 0;
     float	delay = 0.0, tt = 0.0, tto = 0.0;
 
-#pragma omp parallel for private(oi, oj, ok, i, j, k, l, tt, tto, delay) \ 
+#pragma omp parallel for private(oi, oj, ok, i, j, k, l, tt, tto, delay) \
     default(shared) reduction(+:change) schedule(dynamic) num_threads(16)
       for (i=startinew; i<nx-stopinew; i++) {
         for (j=startjnew; j<ny-stopjnew; j++) {
@@ -748,3 +746,7 @@ int main(int argc, char* argv[]) {
     return(change);
 
   } /* end sweepXYZ */
+
+
+/* vim: set tabstop=2 shiftwidth=2 softtabstop=2 expandtab: */
+/* END */
