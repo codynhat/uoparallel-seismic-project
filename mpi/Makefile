@@ -14,4 +14,4 @@ job: sweep-tt-multistart
 	qsub -q generic run.sh
 
 clean:
-	$(RM) run.sh.* output $(PROGS) output.tt *.o
+	$(RM) run.sh.* output $(PROGS) output.tt
