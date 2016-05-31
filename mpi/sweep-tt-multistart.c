@@ -29,6 +29,20 @@
 /* for every starting point.							*/
 /* (Note, the program currently exits before this is done.)			*/
 /********************************************************************************/
+
+////////////////////////////////////////////////////////////////////////////////
+// includes
+////////////////////////////////////////////////////////////////////////////////
+
+#include "forwardstar.h"
+#include "sweepxyz.h"
+
+
+#include "point3d.h"
+#include "floatbox.h"
+#include "boxfiler.h"
+
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
@@ -37,39 +51,61 @@
 #include <sys/time.h>
 
 
+////////////////////////////////////////////////////////////////////////////////
+// constants
+////////////////////////////////////////////////////////////////////////////////
+
 #define	FSRADIUSMAX	7	/* maximum radius forward star */
 #define	FSMAX		818	/* maximum # of points in a forward star */
 #define MODELMAX	250	/* maximum model dimension in X,Y,Z */
-#define STARTMAX	12	/* maximum starting points */
 
-struct FS {			/* forward start offset */
-  int		i, j, k;	/* point coordinates */
-  float		d;		/* distance to star center (0,0,0)*/
-};
+#define STARTMAX 12 /* maximum starting points */
 
-struct MODEL {			/* model point */
-  float		v;		/* velocity */
-  float		tt[STARTMAX];	/* travel time for starting points */
-};
 
-struct START {			/* starting point */
-  int		i, j , k;	/* point coordinates */
-};
+// TODO: remove
+//struct FORWARDSTAR {			/* forward start offset */
+//  int		i, j, k;	/* point coordinates */
+//  float		d;		/* distance to star center (0,0,0)*/
+//};
+
+
+// TODO: remove
+//struct MODEL {			/* model point */
+//  float		v;		/* velocity */
+//  float		tt[STARTMAX];	/* travel time for starting points */
+//};
+
+
+// TODO: remove
+//struct START {			/* starting point */
+//  int		i, j, k;	/* point coordinates */
+//};
 
 int		changed[STARTMAX];
 
-struct FS	fs[FSMAX];
-struct MODEL	model[MODELMAX][MODELMAX][MODELMAX], model_new[130][130][51], transferS[4][130][130][51],transferR[4][130][130][51];
-struct START	start[STARTMAX], start_new;
+struct FORWARDSTAR fs[FSMAX];
+
+struct MODEL model[MODELMAX][MODELMAX][MODELMAX]
+
+struct MODEL model_new[130][130][51];
+struct MODEL transferS[4][130][130][51];
+struct MODEL transferR[4][130][130][51];
+
+// TODO: remove
+//struct START start[STARTMAX], start_new;
+
+struct POINT3D start[STARTMAX], start_new;
+
+
 int startinew,startjnew,stopinew,stopjnew;
 
 
-
-
-
-int sweepXYZ(int nx, int ny, int nz, int s, int starstart, int starstop);
-
-int main(int argc, char* argv[]) {
+int
+main_ (
+  int argc,
+  char* argv[]
+)
+{
   int		i, j, k, l, m, nx, ny, nz, oi, oj, ok, s;
   int		numradius, starsize, anychange, numstart, numsweeps=0, numOfTasks=4;
   int		fsindex[FSRADIUSMAX];
@@ -83,7 +119,11 @@ int main(int argc, char* argv[]) {
   double elapsedTime;
   gettimeofday(&t3, NULL);
 
-  int           sizeOfTasks[4][9]= {{128, 128, 51, 0, 0, 0, 0,7,7},
+  const char *velocityfilename = "../docs/velocity-241-241-51.txt";
+  const char *startfilename = "../docs/start-4.txt";
+
+  int sizeOfTasks[4][9]= {
+    {128, 128, 51, 0, 0, 0, 0,7,7},
     {241, 128, 51, 114, 0, 7, 0, 0,7},
     {128, 241, 52, 0, 114, 0, 7, 7,0},
     {241, 241, 51, 114, 114, 7, 7,0,0}
@@ -109,7 +149,7 @@ int main(int argc, char* argv[]) {
       }; */
 
 
-  int 	communicationMatrix[16][14]= {
+  int communicationMatrix[16][14]= {
     {0,0,0,0,0,0,0,0,0,0,0,0,0,0},
     {0,1,114,120,0,120,0,50,0,6,0,120,0,50},
     {0,2,0,120,114,120,0,50,0,120,0,6,0,50},
@@ -128,17 +168,6 @@ int main(int argc, char* argv[]) {
     {3,3,0,0,0,0,0,0,0,0,0,0,0,0}
   };
 
-  /**
-   * TODO:
-   *   1. Initialize MPI library
-   *   2. Get number of processes
-   *   3. Get rank of current process
-   *
-   *   Note: Only 4 starting points are used.  Code should work
-   *         with 1 or 4 processors (should check).  Usually should
-   *         write an MPI code to work with an arbitrary number of
-   *         processors unless algorithm doesn't allow it.
-   */
   MPI_Status stat;
   MPI_Status stats[6];
   MPI_Request reqs[6];
@@ -149,11 +178,6 @@ int main(int argc, char* argv[]) {
   MPI_Aint    offsets[2], extent, offsets1[1];
   int          blockcounts[2], blockcounts1[1];
 
-  /* Atlee: MPI_Type_extent -> MPI_Type_get_extent
-     MPI_Aint intex, floatex;
-     MPI_Type_extent(MPI_INT, &intex);
-     MPI_Type_extent(MPI_FLOAT, &floatex);
-   */
   MPI_Aint intlb, intex;
   MPI_Aint floatlb, floatex;
   MPI_Type_get_extent( MPI_INT, &intlb, &intex );
@@ -237,21 +261,12 @@ int main(int argc, char* argv[]) {
   MPI_Type_struct(1, blockcounts1, offsets1, oldtypes1,  &starttype);
   MPI_Type_commit(&starttype);
 
-  /**
-   * TODO: Make sure there aren't any race conditions.  If there are, fix
-   *       with barriers.
-   */
-
-  /**
-   * TODO: Only rank 0 should do I/O
-   */
-
   /* open velocity model file */
   //printf("Cannot open velocity model file: %s\n", argv[1]);
   if(taskid==0){
     printf("\ntask number : %d \n", taskid);
     //vfile = fopen(argv[1],"r");
-    vfile = fopen("../docs/velocity-241-241-51.txt","r");
+    vfile = fopen( velocityfilename, "r" );
     if(vfile == NULL) {
       printf("Cannot open velocity model file: %s\n", argv[1]);
       exit(1);
@@ -269,7 +284,7 @@ int main(int argc, char* argv[]) {
 
     /* open file with starting points */
     //startfile = fopen(argv[3],"r");
-    startfile = fopen("../docs/start-4.txt","r");
+    startfile = fopen( startfilename, "r" );
     if(startfile == NULL) {
       printf("Cannot open starting points file: %s\n", argv[4]);
       exit(1);
@@ -309,14 +324,18 @@ int main(int argc, char* argv[]) {
     }
     numradius = 0;
     for (i=0; i<starsize; i++) {
-      fscanf(fsfile, "%i %i %i", &fs[i].i, &fs[i].j, &fs[i].k);
-      fs[i].d = sqrt(fs[i].i*fs[i].i + fs[i].j*fs[i].j + fs[i].k*fs[i].k);
+      fscanf(fsfile, "%i %i %i", &fs[i].pos.x, &fs[i].pos.y, &fs[i].pos.z);
+      fs[i].distance = sqrt (
+        fs[i].pos.x * fs[i].pos.x +
+        fs[i].pos.y * fs[i].pos.y +
+        fs[i].pos.z * fs[i].pos.z
+      );
 
-      if ((numradius+1) < fs[i].d) {
+      if ((numradius+1) < fs[i].distance) {
         fsindex[numradius] = i;
         numradius++;
       }
-      fs[i].d = delta * fs[i].d;
+      fs[i].distance = delta * fs[i].distance;
     }
     printf("Forward star offsets read\n");
     //printf("...... Monil Forward star offsets %i %i %i", fs[starsize].i, &fs[starsize].j, &fs[starsize].k);
@@ -336,9 +355,9 @@ int main(int argc, char* argv[]) {
       }
     }
     for (s=0; s<numstart; s++) {
-      fscanf(startfile, "%i %i %i", &start[s].i, &start[s].j, &start[s].k);
-      model[start[s].i][start[s].j][start[s].k].tt[s] = 0;
-      printf("starting point %d: %d %d %d\n", s, start[s].i, start[s].j, start[s].k);
+      fscanf(startfile, "%i %i %i", &start[s].x, &start[s].y, &start[s].z);
+      model[start[s].x][start[s].y][start[s].z].tt[s] = 0;
+      printf("starting point %d: %d %d %d\n", s, start[s].x, start[s].y, start[s].z);
     }
     printf("Starting points read\n");
 
@@ -362,12 +381,14 @@ int main(int argc, char* argv[]) {
   {//STARTMAX
 
     ////////////////////////// Receive the starting points //////////////////////////////
-
-    printf("\ntask number : %d \n", taskid);
+    //printf("\ntask number : %d \n", taskid);
     MPI_Recv(&start, STARTMAX, starttype, 0, tag, MPI_COMM_WORLD, &stat);
     //MPI_Recv(&model, 250*250*250, modeltype, 0, tag, MPI_COMM_WORLD, &stat);
     //MPI_Recv(&fs, FSMAX, fstype, 0, tag, MPI_COMM_WORLD, &stat);
-    printf("Taskid : %d: starting point %d: %d %d %d\n", taskid, start[taskid].i, start[taskid].j, start[taskid].k);
+    //printf (
+    //  "Taskid : %d: starting point %d: (%d, %d, %d)\n",
+    //  taskid, start[taskid].x, start[taskid].y, start[taskid].z
+    //);
 
   }
 
@@ -376,8 +397,6 @@ int main(int argc, char* argv[]) {
   MPI_Bcast(fs, FSMAX, fstype, 0, MPI_COMM_WORLD);
   MPI_Bcast(model, 250*250*250, modeltype, 0, MPI_COMM_WORLD);
   MPI_Barrier(MPI_COMM_WORLD);
-
-
 
   /*
    * This section is for data copy to all tasks
@@ -415,13 +434,13 @@ int main(int argc, char* argv[]) {
       nx = sizeOfTasks[taskid][0]-sizeOfTasks[taskid][3];
       ny = sizeOfTasks[taskid][1]-sizeOfTasks[taskid][4];
       nz = 51;
+      
       startinew=sizeOfTasks[taskid][5];  // to start from the desired position and ignore the ghost cells
       startjnew=sizeOfTasks[taskid][6]; // to start from the desired position and ignore the ghost cells
       stopinew=sizeOfTasks[taskid][7];
       stopjnew=sizeOfTasks[taskid][8];
-    } //if ends here
-
-  } //for loop for tasks ends here
+    }
+  }
 
   //exit(0);
 
@@ -449,7 +468,15 @@ int main(int argc, char* argv[]) {
       if(taskid==task){
         changed[s] = 0;
 
-        changed[s] = sweepXYZ(nx, ny, nz, s, 0, 818-1);
+        changed[s] = sweepxyz (
+          FSMAX,
+          fs,
+          model_new,
+          p3d( startinew, startjnew, 0 ),
+          p3d( nx - stopinew, ny - stopjnew, nz - 1 ),
+          s, 0, 818-1, noderegion
+        );
+
         //printf(">>> start point %d: by Task: %d, changed == %d\n", s,taskid, changed[s]);
         anychange = changed[s];
         new_changeS[taskid]=anychange;
@@ -670,83 +697,10 @@ int main(int argc, char* argv[]) {
   elapsedTime = (t2.tv_sec - t3.tv_sec);      // sec to ms
   elapsedTime += (t2.tv_usec - t3.tv_usec) / 1000000.0;   // us to ms
   printf( "\n elapsed Second for whole program: %f \n", elapsedTime);
+}
 
 
-
-  /**
-   * TODO: Shutdown MPI library
-   */
-
-  } /* main */
-
-
-  int sweepXYZ(int nx, int ny, int nz, int s, int starstart, int starstop) {
-    int	i, j, k, l, oi, oj, ok;
-    int	change = 0;
-    float	delay = 0.0, tt = 0.0, tto = 0.0;
-
-#pragma omp parallel for private(oi, oj, ok, i, j, k, l, tt, tto, delay) \
-    default(shared) reduction(+:change) schedule(dynamic) num_threads(16)
-      for (i=startinew; i<nx-stopinew; i++) {
-        for (j=startjnew; j<ny-stopjnew; j++) {
-          for (k=0; k<nz; k++) {
-            for (l=starstart; l<starstop; l++) {
-              /* find point in forward star based on offsets */
-              oi = i+fs[l].i; oj = j+fs[l].j; ok = k+fs[l].k;
-
-              /* if (oi,oj,ok) is outside the boundaries, then skip */
-              if ((oi < 0) || (oi > nx-1)
-                  || (oj < 0) || (oj > ny-1)
-                  || (ok < 0) || (ok > nz-1)) {
-
-                continue;
-              }
-              /* compute delay from (i,j,k) to (oi,oj,ok) with end point average */
-              delay = fs[l].d * (model_new[i][j][k].v + model_new[oi][oj][ok].v) / 2.0;
-              /* update travel times for all starting points */
-              /* if (i,j,k) is starting point, then skip */
-
-              if ((i == start[s].i) && (j == start[s].j) && (k == start[s].k)) {
-
-                continue;
-              }
-              tt = model_new[i][j][k].tt[s];
-              tto = model_new[oi][oj][ok].tt[s];
-              /* if offset point has infinity travel time, then update */
-              if ((tt == INFINITY) && (tto == INFINITY)) {
-
-                continue;
-              }
-              if ((tt != INFINITY) && (tto == INFINITY)) {
-                model_new[oi][oj][ok].tt[s] = delay + tt;
-                change += 1;
-                continue;
-              }
-              if ((tt == INFINITY) && (tto != INFINITY)) {
-                model_new[i][j][k].tt[s] = delay + tto;
-                change += 1;
-                continue;
-              }
-              if ((tt != INFINITY) && (tto != INFINITY)) {
-                /* if a shorter travel time through (oi,oj,ok), update (i,j,k) */
-                if ((delay + tto) < tt) {
-                  model_new[i][j][k].tt[s] = delay + tto;
-                  change += 1;
-                }
-                /* if a shorter travel time through (i,j,k), update (oi,oj,ok) */
-                else if ((delay + tt) < tto) {
-                  model_new[oi][oj][ok].tt[s] = delay + tt;
-                  change += 1;
-                }
-              }
-            }
-          }
-        }
-      }
-    return(change);
-
-  } /* end sweepXYZ */
-
-
-/* vim: set tabstop=2 shiftwidth=2 softtabstop=2 expandtab: */
-/* END */
+////////////////////////////////////////////////////////////////////////////////
+// vim: set tabstop=2 shiftwidth=2 softtabstop=2 expandtab:
+// END
+////////////////////////////////////////////////////////////////////////////////
