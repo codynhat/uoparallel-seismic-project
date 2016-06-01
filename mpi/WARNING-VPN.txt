@@ -1,0 +1,7 @@
+If you try to use 'mpirun' on your local machine while connected to a VPN,
+even if you're not using the VPN, you're gonna have a bad time.
+
+MPI_Init seems to try to connect through the VPN, even if you didn't tell it to,
+and of course it will fail, but it isn't smart so it just sits there doing nothing.
+
+Easy fix: disable the VPN while using 'mpirun'.
