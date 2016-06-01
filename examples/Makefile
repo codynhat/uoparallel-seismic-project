@@ -8,7 +8,8 @@ RM ?= rm -f
 PROGS = example_point3d
 PROGS += example_floatbox
 PROGS += example_boxfiler
-PROGS += example_mpihelpers
+#PROGS += example_mpihelpers
+PROGS += example_intersect
 
 all: $(PROGS)
 
