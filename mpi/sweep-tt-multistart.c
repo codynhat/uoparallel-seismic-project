@@ -12,16 +12,18 @@
 #include "sweepxyz.h"
 
 
-#include "point3d.h"
-#include "floatbox.h"
 #include "boxfiler.h"
+#include "floatbox.h"
+#include "intersect.h"
+#include "mpihelpers.h"
+#include "point3d.h"
 
 
-#include <stdlib.h>
-#include <stdio.h>
 #include <math.h>
-#include "mpi.h"
+#include <mpi.h>
 #include <omp.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <sys/time.h>
 
 
@@ -29,12 +31,11 @@
 // constants
 ////////////////////////////////////////////////////////////////////////////////
 
-#define	FSRADIUSMAX	7	/* maximum radius forward star */
-#define	FSMAX		818	/* maximum # of points in a forward star */
-#define MODELMAX	250	/* maximum model dimension in X,Y,Z */
-
-#define STARTMAX 12 /* maximum starting points */
-
+#define	FSRADIUSMAX	7 // maximum radius forward star
+#define FSMAX 818     //maximum # of points in a forward star */
+//#define MODELMAX	250	/* maximum model dimension in X,Y,Z */
+//#define STARTMAX 12 /* maximum starting points */
+#define GHOSTDEPTH FSRADIUSMAX
 
 // TODO: remove
 //struct FORWARDSTAR {			/* forward start offset */
@@ -74,10 +75,53 @@
 // TODO: remove
 //struct START start[STARTMAX], start_new;
 
-
-
 //int startinew,startjnew,stopinew,stopjnew;
 
+
+////////////////////////////////////////////////////////////////////////////////
+// box file signatures
+////////////////////////////////////////////////////////////////////////////////
+
+const char vbox_sig[4] = {'v', 'b', 'o', 'x'};
+const char ttbox_sig[4] = {'t', 't', 'b', 'x'};
+
+
+////////////////////////////////////////////////////////////////////////////////
+// structs
+////////////////////////////////////////////////////////////////////////////////
+
+struct STATE {
+  struct ARGS args;          // parsed command-line arguments
+  int numranks, myrank;      // MPI information
+  struct POINT3D rankdims;   // number of ranks along each axis 
+  struct POINT3D rankcoords; // my rank coordinates
+  struct POINT3D gmin;       // global minimum coordinate of any rank
+  struct POINT3D gmax;       // global maximum coordinate of any rank
+  struct FLOATBOX vbox;      // contains velocity data and region
+  struct {
+    int rank;                // if < 0 then no neighbor here, else MPI rank
+    struct FLOATBOX send;    // send buffer
+    struct FLOATBOX recv;    // receive buffer
+  } neighbors[3][3][3];      // for now assume only split along x,y plane
+};
+
+
+////////////////////////////////////////////////////////////////////////////////
+// prototypes
+// note: prefix do_* because of name conflicts with dynamic libraries
+////////////////////////////////////////////////////////////////////////////////
+
+void do_getargs( struct STATE *state, int argc, char *argv[] );
+void do_initmpi( struct STATE *state, int argc, char *argv[] );
+void do_initstate( struct STATE *state );
+void do_loaddatafromfiles( struct STATE *state );
+void do_preparebuffers( struct STATE *state );
+void do_shutdown( struct STATE *state );
+
+
+////////////////////////////////////////////////////////////////////////////////
+// main
+////////////////////////////////////////////////////////////////////////////////
 
 int
 main (
@@ -85,30 +129,216 @@ main (
   char *argv[]
 )
 {
-  struct ARGS args;
+  struct STATE state;
 
-  if( !parseargs( &args, argc, argv ) ) return 0;
+  do_initstate( &state );
+  do_initmpi( &state, argc, argv );
+  do_getargs( &state, argc, argv );
+  do_loaddatafromfiles( &state );
+  do_preparebuffers( &state );
 
-  // MPI: vars
-  int numranks, myrank;
-
-  // MPI: start
-  MPI_Init( &argc, &argv );
-  MPI_Comm_size( MPI_COMM_WORLD, &numranks );
-  MPI_Comm_rank( MPI_COMM_WORLD, &myrank );
-
-  puts( "MPI:" );
-  printf( "  number of ranks: %d\n", numranks );
-  printf( "  my rank: %d\n", myrank );
-
-  // MPI: stop
-  MPI_Barrier( MPI_COMM_WORLD );
-  MPI_Finalize();
+  do_shutdown( &state );
 
   return 0;
 }
 
 
+////////////////////////////////////////////////////////////////////////////////
+// other functions
+////////////////////////////////////////////////////////////////////////////////
+
+void
+do_getargs (
+  struct STATE *state,
+  int argc,
+  char *argv[]
+)
+{
+  if( !parseargs( &state->args, argc, argv ) ) {
+    if( state->myrank == 0 ) {
+      printf(
+        "usage: %s <in:velocity.vbox> <in:startpoints.txt> <out:traveltimes.ttbox>\n",
+        argv[0]
+      );
+      fflush( stdout );
+    }
+    do_shutdown( state );
+  }
+}
+
+
+void
+do_initmpi (
+  struct STATE *state,
+  int argc,
+  char *argv[]
+)
+{
+  MPI_Init( &argc, &argv );
+  MPI_Comm_size( MPI_COMM_WORLD, &state->numranks );
+  MPI_Comm_rank( MPI_COMM_WORLD, &state->myrank );
+
+  if( !state->myrank ) {
+    printf( "MPI ranks: %d\n", state->numranks );
+  }
+  
+  int bestx = splitsquare_numx( state->numranks );
+  int besty = state->numranks / bestx;
+  int bestz = 1; // TODO: allow other than 1
+
+  state->rankdims = p3d( bestx, besty, bestz );
+  state->rankcoords = mpifindrankcoordsfromrank( state->rankdims, state->myrank );
+}
+
+
+void
+do_initstate (
+  struct STATE *state
+)
+{
+  boxinit( &state->vbox );
+}
+
+
+void
+do_loaddatafromfiles (
+  struct STATE *state
+)
+{
+  boxinit( &state->vbox );
+  
+  // open file
+  struct BOXOPENFILE vboxfile;
+  if( !boxfileopenbinary( &vboxfile, state->args.velocityfilename, vbox_sig ) ) {
+    fprintf (
+      stderr,
+      "%d: boxfileopenbinary(.., %s, ..) failed!\n",
+      state->myrank, state->args.velocityfilename
+    );
+    fflush( stdout );
+    do_shutdown( state );
+  }
+
+  // store file coordinates
+  state->gmin = vboxfile.min;
+  state->gmax = vboxfile.max;
+
+  // compute inner coordinates for this rank
+  struct POINT3D imin, imax;
+  mpifindregionfromrankcoords (
+    &imin, &imax,
+    state->gmin, state->gmax,
+    state->rankdims, state->rankcoords
+  );
+
+  // compute outer coordinates from this rank
+  struct POINT3D omin, omax;
+  p3dgrowinside( &omin, &omax, imin, imax, GHOSTDEPTH, state->gmin, state->gmax );
+
+  // load volume of outer coordinates from velocity file
+  if( !boxfileloadbinarysubset( &state->vbox, omin, omax, imin, imax, vboxfile ) ) {
+    fprintf (
+      stderr,
+      "%d: boxfileloadbinarysubset(..) from %s failed!\n",
+      state->myrank, state->args.velocityfilename
+    );
+    fflush( stdout );
+    do_shutdown( state );
+  }
+  printf(
+    "%d: loaded my region from velocity file: (%d, %d, %d) to (%d, %d, %d)\n",
+    state->myrank, imin.x, imin.y, imin.z, imax.x, imax.y, imax.z
+  );
+
+  boxfileclosebinary( &vboxfile );
+}
+
+
+void
+do_preparebuffers (
+  struct STATE *state
+)
+// allocates send and receive buffers for adjacent neighbors
+{
+  for( int x = -1; x <= 1; x++ ) {
+    for( int y = -1; y <= 1; y++ ) {
+      for( int z = -1; z <= 1; z++ ) {
+        if( x || y || z ) { // (0,0,0) is me
+          struct POINT3D ncoords = p3daddp3d( state->rankcoords, p3d( x, y, z ) );
+          int nrank = mpifindrankfromrankcoords( state->rankdims, ncoords );
+          if( nrank >= 0 ) {
+
+            // neighbor's inner region (no ghost)
+            struct POINT3D nimin, nimax;
+            mpifindregionfromrankcoords (
+              &nimin, &nimax,
+              state->gmin, state->gmax,
+              state->rankdims, ncoords
+            );
+
+            // neighbor's outer region (including ghost)
+            struct POINT3D nomin, nomax;
+            p3dgrowinside (
+              &nomin, &nomax, nimin, nimax,
+              GHOSTDEPTH,
+              state->gmin, state->gmax
+            );
+
+            // send intersection: neighbor's ghost overlapping my inner region
+            struct POINT3D smin, smax;
+            // recv intersection: my ghost with neighbor's inner region
+            struct POINT3D rmin, rmax;
+            // compute intersections
+            if (
+              !intersect3d (
+                &smin, &smax, nomin, nomax, state->vbox.imin, state->vbox.imax
+              ) ||
+              !intersect3d (
+                &rmin, &rmax, nimin, nimax, state->vbox.omin, state->vbox.omax
+              )
+            ) {
+              fprintf (
+                stderr,
+                "%d: error: no intersection with neighbor %d, but there should be!\n",
+                state->myrank, nrank
+              );
+            }
+            else {
+              printf (
+                "%d: send buffer for neighbor %d: (%d, %d, %d) to (%d, %d, %d)\n",
+                state->myrank, nrank,
+                smin.x, smin.y, smin.z, smax.x, smax.y, smax.z
+              );
+              printf (
+                "%d: recv buffer for neighbor %d: (%d, %d, %d) to (%d, %d, %d)\n",
+                state->myrank, nrank,
+                rmin.x, rmin.y, rmin.z, rmax.x, rmax.y, rmax.z
+              );
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+
+void
+do_shutdown (
+  struct STATE *state
+)
+{
+  boxfree( &state->vbox );
+  printf( "%d: shutting down normally\n", state->myrank );
+  fflush( stdout );
+  MPI_Barrier( MPI_COMM_WORLD );
+  MPI_Finalize();
+  exit(0);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// cruft
+////////////////////////////////////////////////////////////////////////////////
 
 // TODO: remove
 //int
