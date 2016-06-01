@@ -37,9 +37,12 @@ intersect1d (
     int bmax
 )
 {
+    if( !min || !max ) return 0;
     if( amax < bmin || bmax < amin ) return 0;
+
     *min = amin <= bmin ? bmin : amin;
     *max = amax >= bmax ? bmax : amax;
+
     return 1;
 }
 
