@@ -4,6 +4,8 @@
 //
 // Requires:
 //   forwardstar.h
+//
+//   floatbox.h
 //   point3d.h
 //
 //
@@ -19,9 +21,11 @@
 #include "forwardstar.h"
 
 
+#include "floatbox.h"
 #include "point3d.h"
 
 
+#include <math.h>
 #include <stdio.h>
 
 
@@ -29,106 +33,77 @@
 // functions
 ////////////////////////////////////////////////////////////////////////////////
 
-int
+long
 sweepxyz (
   const int FSMAX,
   const struct FORWARDSTAR fs[FSMAX],
-  const struct MODEL model_new[130][130][51],
-  const struct POINT3D min, // x,y,z of minimum corner (inclusive)
-  const struct POINT3D max, // x,y,z of maximum corner (inclusive)
-  int s, int starstart, int starstop
+  const struct FLOATBOX vbox,  // velocity box: doesn't change
+  const struct FLOATBOX ttbox, // travel times: ttbox.flat[..] may change
+  const struct POINT3D startpoint,
+  const int starstart, const int starstop
 )
 {
-  int	oi, oj, ok;
-  int	change = 0;
-  float	delay = 0.0, tt = 0.0, tto = 0.0;
+  long change = 0;
 
-  printf (
-    "sweepXYZ (\n"
-    "  FSMAX: %d\n"
-    "  fs[FSMAX]: (stuff)\n"
-    "  min: (%d, %d, %d)\n"
-    "  max: (%d, %d, %d)\n"
-    "  s: %d, starstart: %d, starstop: %d\n"
-    ")\n",
-    FSMAX,
-    min.x, min.y, min.z,
-    max.x, max.y, max.z,
-    s, starstart, starstop
-  );
-
-  #pragma omp parallel for private(pt, x, y, z, l, tt, tto, delay) \
+  #pragma omp parallel for private(here, there, l, vel_here, vel_there, tt_here, tt_there, delay)\
     default(shared) reduction(+:change) schedule(dynamic) num_threads(16)
   //#pragma omp parallel for private(oi, oj, ok, x, y, z, l, tt, tto, delay) \
     default(shared) reduction(+:change) schedule(dynamic) num_threads(16)
-  for( int x = min.x; x <= max.x; x++ ) {
-    for( int y = min.y; y <= max.y; y++ ) {
-      for( int z = min.z; z <= max.z; z++ ) {
-  /* TODO: remove
-  for (int x=startinew; x<size.x-stopinew; x++) {
-    for (int y=startjnew; y<size.y-stopjnew; y++) {
-      for (int z=0; z<size.z; z++) {
-  */
-        for (int l=starstart; l<starstop; l++) {
-          /* find point in forward star based on offsets */
+  for( struct POINT3D here = vbox.imin; here.x <= vbox.imax.x; here.x++ ) {
+    for( here.y = vbox.imin.y; here.y <= vbox.imax.y; here.y++ ) {
+      for( here.z = vbox.imin.z; here.z <= vbox.imax.z; here.z++ ) {
+        for( int l = starstart; l < starstop; l++ ) {
 
-          // TODO: remove
-          //oi = x + fs[l].pos.x;
-          //oj = y + fs[l].pos.y;
-          //ok = z + fs[l].pos.z;
+          // find point in forward star based on offsets
+          struct POINT3D there = p3daddp3d( here, fs[l].pos );
+
+          // if 'there' is outside the boundaries, then skip
+          if (
+            p3disless( there, vbox.omin ) ||
+            p3dismore( there, vbox.omax )
+          ) {
+            continue;
+          }
           
-          // TODO: remove
-          //struct POINT3D pt = {oi, oj, ok};
+          // compute delay from 'here' to 'there' with endpoint average
+          float vel_here = boxgetglobal( vbox, here );
+          float vel_there = boxgetglobal( vbox, there );
+          float delay = fs[l].distance * (vel_here + vel_there) * 0.5f;
+          
+          // ignore the starting point
+          if( p3disnotequal( here, startpoint ) ) {
 
-          struct POINT3D pt = p3daddp3d( p3d( x, y, z ), fs[l].pos );
+            float tt_here = boxgetglobal( ttbox, here );
+            float tt_there = boxgetglobal( ttbox, there );
 
-
-          /* if (oi,oj,ok) is outside the boundaries, then skip */
-          if( p3disless( pt, min ) || p3dismore( pt, max ) ) continue;
-          /* TODO: remove
-          if ((oi < 0) || (oi > size.x-1)
-              || (oj < 0) || (oj > size.y-1)
-              || (ok < 0) || (ok > size.z-1)) {
-
-            continue;
-          }
-          */
-          /* compute delay from (x,y,z) to (pt.x,pt.y,pt.z) with end point average */
-          delay = fs[l].distance * (model_new[x][y][z].v + model_new[pt.x][pt.y][pt.z].v) / 2.0;
-          /* update travel times for all starting points */
-          /* if (x,y,z) is starting point, then skip */
-
-          if ((x == start[s].x) && (y == start[s].y) && (z == start[s].z)) {
-
-            continue;
-          }
-          tt = model_new[x][y][z].tt[s];
-          tto = model_new[pt.x][pt.y][pt.z].tt[s];
-          /* if offset point has infinity travel time, then update */
-          if ((tt == INFINITY) && (tto == INFINITY)) {
-
-            continue;
-          }
-          if ((tt != INFINITY) && (tto == INFINITY)) {
-            model_new[pt.x][pt.y][pt.z].tt[s] = delay + tt;
-            change += 1;
-            continue;
-          }
-          if ((tt == INFINITY) && (tto != INFINITY)) {
-            model_new[x][y][z].tt[s] = delay + tto;
-            change += 1;
-            continue;
-          }
-          if ((tt != INFINITY) && (tto != INFINITY)) {
-            /* if a shorter travel time through (pt.x,pt.y,pt.z), update (x,y,z) */
-            if ((delay + tto) < tt) {
-              model_new[x][y][z].tt[s] = delay + tto;
-              change += 1;
+            // if offset point has infinity travel time, then update
+            if ((tt_here == INFINITY) && (tt_there == INFINITY)) {
+              continue;
             }
-            /* if a shorter travel time through (x,y,z), update (pt.x,pt.y,pt.z) */
-            else if ((delay + tt) < tto) {
-              model_new[pt.x][pt.y][pt.z].tt[s] = delay + tt;
-              change += 1;
+
+            if ((tt_here != INFINITY) && (tt_there == INFINITY)) {
+              boxputglobal( ttbox, there, delay + tt_here );
+              change++;
+              continue;
+            }
+
+            if ((tt_here == INFINITY) && (tt_there != INFINITY)) {
+              boxputglobal( ttbox, here, delay + tt_there );
+              change++;
+              continue;
+            }
+
+            if ((tt_here != INFINITY) && (tt_there != INFINITY)) {
+              // if a shorter travel time through 'there', update 'here'
+              if ((delay + tt_there) < tt_here) {
+                boxputglobal( ttbox, here, delay + tt_there );
+                change++;
+              }
+              // if a shorter travel time through 'here', update 'there'
+              else if ((delay + tt_here) < tt_there) {
+                boxputglobal( ttbox, there, delay + tt_here );
+                change++;
+              }
             }
           }
         }
@@ -136,8 +111,7 @@ sweepxyz (
     }
   }
 
-  return(change);
-
+  return change;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
