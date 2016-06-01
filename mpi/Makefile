@@ -1,5 +1,5 @@
 CC ?= gcc
-MPI_COMPILE_FLAGS = $(shell mpicc --showme:compile)
+MPI_COMPILE_FLAGS = $(shell mpicc --showme:compile) -std=c99
 MPI_LINK_FLAGS = $(shell mpicc --showme:link)
 INCLUDE = -I../include
 DOCS=../docs
