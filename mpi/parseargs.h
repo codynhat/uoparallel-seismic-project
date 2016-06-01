@@ -38,25 +38,12 @@ parseargs (
 // success: returns non-0
 {
   // check arguments
-  if( argc != 4 ) {
-    printf (
-      "usage: %s <in:velocities.vbox> <in:startpoints.txt> <out:traveltime.ttbox>\n",
-      argv[0]
-    );
-    return 0;
-  }
+  if( argc != 4 ) return 0;
 
   // filenames
   args->velocityfilename = argv[1];
   args->startpointsfilename = argv[2];
   args->traveltimefilename = argv[3];
-
-  // echo filenames to user
-  puts( "input:" );
-  printf( "  velocity file: %s\n", args->velocityfilename );
-  printf( "  startpoints file: %s\n", args->startpointsfilename );
-  puts( "output:" );
-  printf( "  traveltime file: %s\n", args->traveltimefilename );
 
   // success
   return 1;
