@@ -17,6 +17,9 @@
 //   p3dismore
 //   p3disnotequal
 //
+//   p3dmin
+//   p3dmax
+//
 //   p3dcalcvolume
 //   p3dsizeofregion
 //
@@ -53,12 +56,12 @@ p3d (
 inline extern
 struct POINT3D
 p3daddp3d (
-    const struct POINT3D pta,
-    const struct POINT3D ptb
+    const struct POINT3D a,
+    const struct POINT3D b
 )
-// pta + ptb
+// a + b
 {
-    return (struct POINT3D){pta.x + ptb.x, pta.y + ptb.y, pta.z + ptb.z};
+    return (struct POINT3D){a.x + b.x, a.y + b.y, a.z + b.z};
 }
 
 
@@ -112,13 +115,43 @@ p3disnotequal (
 
 inline extern
 struct POINT3D
-p3dsubp3d (
-    const struct POINT3D pta,
-    const struct POINT3D ptb
+p3dmin (
+    const struct POINT3D a,
+    const struct POINT3D b
 )
-// pta - ptb
 {
-    return (struct POINT3D){pta.x - ptb.x, pta.y - ptb.y, pta.z - ptb.z};
+    return p3d (
+        a.x < b.x ? a.x : b.x,
+        a.y < b.y ? a.y : b.y,
+        a.z < b.z ? a.z : b.z
+    );     
+}
+
+
+inline extern
+struct POINT3D
+p3dmax (
+    const struct POINT3D a,
+    const struct POINT3D b
+)
+{
+    return p3d (
+        a.x > b.x ? a.x : b.x,
+        a.y > b.y ? a.y : b.y,
+        a.z > b.z ? a.z : b.z
+    );
+}
+
+
+inline extern
+struct POINT3D
+p3dsubp3d (
+    const struct POINT3D a,
+    const struct POINT3D b
+)
+// a - b
+{
+    return (struct POINT3D){a.x - b.x, a.y - b.y, a.z - b.z};
 }
 
 
