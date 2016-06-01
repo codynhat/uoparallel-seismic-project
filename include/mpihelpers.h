@@ -65,8 +65,77 @@ mpicalculatemycoordinates (
 }
 
 
+void
+mpifindregionfromrankcoords (
+    struct POINT3D *min,
+    struct POINT3D *max,
+    const struct POINT3D gmin,
+    const struct POINT3D gmax,
+    const struct POINT3D rankdims,
+    const struct POINT3D rankcoords
+)
+// to ensure no floating-point weirdness, block size is integral;
+// excess goes to most positive rank coords
+{
+    struct POINT3D size = p3dsizeofregion( gmin, gmax );
+    struct POINT3D block = { size.x / rankdims.x, size.y / rankdims.y, size.z / rankdims.z };
+
+    *min = p3daddp3d (
+        gmin,
+        p3d( rankcoords.x * block.x, rankcoords.y * block.y, rankcoords.z * block.z )
+    );
+    *max = p3daddp3d( *min, p3daddval( block, -1 ) );
+
+    if( rankcoords.x + 1 == rankdims.x ) max->x = gmax.x;
+    if( rankcoords.y + 1 == rankdims.y ) max->y = gmax.y;
+    if( rankcoords.z + 1 == rankdims.z ) max->z = gmax.z;
+}
+
+
 int
-mpifindneighborrank (
+mpifindrankfromrankcoords (
+    const struct POINT3D rankdims,   // number of ranks along each dimension
+    const struct POINT3D rankcoords  // coordinates within rankdims
+)
+// returns -1 if no rank at rankcoords, else a valid rank number
+{
+    if (
+        p3disless( rankcoords, p3d( 0, 0, 0 ) ) ||
+        p3dismore( rankcoords, p3daddval( rankdims, -1 ) )
+    ) {
+        return -1;
+    }
+
+    int spanz = 1;
+    int spany = rankdims.z * spanz;
+    int spanx = rankdims.y * spany; 
+
+    return rankcoords.x * spanx + rankcoords.y * spany + rankcoords.z * spanz;
+}
+
+
+struct POINT3D
+mpifindrankcoordsfromrank (
+    const struct POINT3D rankdims,
+    int rank
+)
+{
+    int spanz = 1;
+    int spany = rankdims.z * spanz;
+    int spanx = rankdims.y * spany; 
+
+    int x = rank / spanx;
+    rank -= x * spanx;
+
+    int y = rank / spany;
+    rank -= y * spany;
+
+    return p3d( x, y, rank );
+}
+
+
+int
+mpifindneighborrank_ (
     int my_rank,
     int ghost_id,   // see ^Ghost cell ids
     int width
@@ -258,6 +327,6 @@ mpigetreceivecoordinates (
 
 
 ////////////////////////////////////////////////////////////////////////////////
-// vim: set tabstop=2 shiftwidth=2 softtabstop=2 expandtab:
+// vim: set tabstop=4 shiftwidth=4 softtabstop=4 expandtab:
 // END
 ////////////////////////////////////////////////////////////////////////////////
