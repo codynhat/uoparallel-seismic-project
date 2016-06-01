@@ -23,6 +23,8 @@
 //   p3dcalcvolume
 //   p3dsizeofregion
 //
+//   p3dgrowinside
+//
 //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -174,6 +176,22 @@ p3dcalcvolume (
 // correctly computes volume even if larger than int
 {
     return (long)size.x * size.y * size.z;
+}
+
+
+void
+p3dgrowinside (
+    struct POINT3D *omin,        // receives new minimum
+    struct POINT3D *omax,        // receives new maximum
+    const struct POINT3D imin,  // starting minimum
+    const struct POINT3D imax,  // starting maximum
+    const int depth,            // grow amount (should be non-negative)
+    const struct POINT3D gmin,  // boundary minimum
+    const struct POINT3D gmax   // boundary maximum
+)
+{
+    *omin = p3dmax( p3daddval( imin, -depth ), gmin );
+    *omax = p3dmin( p3daddval( imax, depth ), gmax );
 }
 
 
