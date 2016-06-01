@@ -205,8 +205,6 @@ do_loaddatafromfiles (
   struct STATE *state
 )
 {
-  boxinit( &state->vbox );
-  
   // open file
   struct BOXOPENFILE vboxfile;
   if( !boxfileopenbinary( &vboxfile, state->args.velocityfilename, vbox_sig ) ) {
