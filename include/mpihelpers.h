@@ -117,11 +117,15 @@ mpigetsendcoordinates (
     struct POINT3D *dims,
     int ghost_id,       // see ^Ghost cell ids
     int ghost_size,      // probably want 7
-    int min_x,
-    int min_y,
-    int max_x,
-    int max_y,
-    int z
+    struct POINT3D imin,
+    struct POINT3D imax
+    //int min_x,
+    //int min_y,
+    //int max_x,
+    //int max_y,
+    //int min_z,
+    //int max_z
+    //int z
 )
 // returns send coordinates for a given ghost cell and dims
 {
@@ -129,56 +133,56 @@ mpigetsendcoordinates (
 
   switch (ghost_id) {
     case 0:
-      min->x = min_x-ghost_size;
-      min->y = min_y-ghost_size;
+      min->x = imin.x - ghost_size;
+      min->y = imin.y - ghost_size;
       dims->x = ghost_size;
       dims->y = ghost_size;
       break;
     case 1:
-      min->x = min_x;
-      min->y = min_y-ghost_size;
-      dims->x = max_x-min_x;
+      min->x = imin.x;
+      min->y = imin.y - ghost_size;
+      dims->x = imax.x - imin.x;
       dims->y = ghost_size;
       break;
     case 2:
-      min->x = max_x;
-      min->y = min_y-ghost_size;
+      min->x = imax.x;
+      min->y = imin.y - ghost_size;
       dims->x = ghost_size;
       dims->y = ghost_size;
       break;
     case 3:
-      min->x = max_x;
-      min->y = min_y;
+      min->x = imax.x;
+      min->y = imin.y;
       dims->x = ghost_size;
-      dims->y = max_y-min_y;
+      dims->y = imax.y - imin.y;
       break;
     case 4:
-      min->x = max_x;
-      min->y = max_y;
+      min->x = imax.x;
+      min->y = imax.y;
       dims->x = ghost_size;
       dims->y = ghost_size;
       break;
     case 5:
-      min->x = min_x;
-      min->y = max_y;
-      dims->x = max_x-min_x;
+      min->x = imin.x;
+      min->y = imax.y;
+      dims->x = imax.x - imin.x;
       dims->y = ghost_size;
       break;
     case 6:
-      min->x = min_x-ghost_size;
-      min->y = max_y;
+      min->x = imin.x - ghost_size;
+      min->y = imax.y;
       dims->x = ghost_size;
       dims->y = ghost_size;
       break;
     case 7:
-      min->x = min_x-ghost_size;
-      min->y = min_y;
+      min->x = imin.x - ghost_size;
+      min->y = imin.y;
       dims->x = ghost_size;
-      dims->y = max_y-min_y;
+      dims->y = imax.y - imin.y;
       break;
   }
-  min->z = 0;
-  dims->z = z;
+  min->z = imin.z;
+  dims->z = imax.z - imin.z + 1;
 }
 
 
