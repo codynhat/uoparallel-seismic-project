@@ -2,6 +2,13 @@
 // mpihelpers.h - 2016.05.25 - Cody Hatfield
 ////////////////////////////////////////////////////////////////////////////////
 //
+// Functions:
+//   mpicalculatemycoordinates
+//   mpifindneighborrank
+//   mpigetsendcoordinates
+//   mpigetreceivecoordinates
+//
+//
 // Ghost cell ids:
 //   Starting from SW, counter-clockwise
 //   6 5 4
@@ -10,8 +17,20 @@
 //
 ////////////////////////////////////////////////////////////////////////////////
 
+#pragma once
+
+
+////////////////////////////////////////////////////////////////////////////////
+// includes
+////////////////////////////////////////////////////////////////////////////////
+
 #include "point3d.h"
 #include "splitsquare.h"
+
+
+////////////////////////////////////////////////////////////////////////////////
+// functions
+////////////////////////////////////////////////////////////////////////////////
 
 void
 mpicalculatemycoordinates (
@@ -26,22 +45,25 @@ mpicalculatemycoordinates (
 // assumes z is depth
 // assumes total_nodes is power of 2
 {
-    int num_x = splitsquare_numx(total_nodes);
-    int num_y = (total_nodes/num_x);
+  if( min == 0 || dims == 0 ) return;
 
-    int dims_x = (src_dims.x/num_x);
-    int dims_y = (src_dims.y/num_y);
+  int num_x = splitsquare_numx(total_nodes);
+  int num_y = (total_nodes/num_x);
 
-    int col_rank = my_rank % num_x;
-    int row_rank = my_rank / num_x;
+  int dims_x = (src_dims.x/num_x);
+  int dims_y = (src_dims.y/num_y);
 
-    min->x = (dims_x * col_rank) + src_min.x;
-    dims->x = col_rank < (num_x - 1) ? dims_x : src_dims.x - (dims_x * (num_x - 1));
-    min->y = (dims_y * row_rank) + src_min.y;
-    dims->y = row_rank < (num_y - 1) ? dims_y : src_dims.y - (dims_y * (num_y - 1));
-    min->z = src_min.z;
-    dims->z = src_dims.z;
+  int col_rank = my_rank % num_x;
+  int row_rank = my_rank / num_x;
+
+  min->x = (dims_x * col_rank) + src_min.x;
+  dims->x = col_rank < (num_x - 1) ? dims_x : src_dims.x - (dims_x * (num_x - 1));
+  min->y = (dims_y * row_rank) + src_min.y;
+  dims->y = row_rank < (num_y - 1) ? dims_y : src_dims.y - (dims_y * (num_y - 1));
+  min->z = src_min.z;
+  dims->z = src_dims.z;
 }
+
 
 int
 mpifindneighborrank (
@@ -89,9 +111,8 @@ mpifindneighborrank (
 }
 
 
-
 void
-mpigetsendcoordinates(
+mpigetsendcoordinates (
     struct POINT3D *min,
     struct POINT3D *dims,
     int ghost_id,       // see ^Ghost cell ids
@@ -104,8 +125,7 @@ mpigetsendcoordinates(
 )
 // returns send coordinates for a given ghost cell and dims
 {
-  if( min == 0 ) return;
-  if( dims == 0 ) return;
+  if( min == 0 || dims == 0 ) return;
 
   switch (ghost_id) {
     case 0:
@@ -163,11 +183,11 @@ mpigetsendcoordinates(
 
 
 void
-mpigetreceivecoordinates(
-    struct POINT3D *min,
-    struct POINT3D *dims,
-    int ghost_id,       // see ^Ghost cell ids
-    int ghost_size,      // probably want 7
+mpigetreceivecoordinates (
+    struct POINT3D *min,     // out
+    struct POINT3D *dims,    // out
+    int ghost_id,            // see ^Ghost cell ids
+    int ghost_size,          // probably want 7
     int min_x,
     int min_y,
     int max_x,
@@ -176,7 +196,7 @@ mpigetreceivecoordinates(
 )
 // returns receive coordinates for a given ghost cell and dims
 {
-  if( min == 0 ) return;
+  if( min == 0 || dims == 0 ) return;
 
   switch (ghost_id) {
     case 0:
@@ -231,3 +251,9 @@ mpigetreceivecoordinates(
   min->z = 0;
   dims->z = z;
 }
+
+
+////////////////////////////////////////////////////////////////////////////////
+// vim: set tabstop=2 shiftwidth=2 softtabstop=2 expandtab:
+// END
+////////////////////////////////////////////////////////////////////////////////
