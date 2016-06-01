@@ -15,6 +15,7 @@
 //
 //   p3disless
 //   p3dismore
+//   p3disnotequal
 //
 //   p3dcalcvolume
 //   p3dsizeofregion
@@ -95,6 +96,17 @@ p3dismore (
 // weak comparison: a > b for any component
 {
     return a.x > b.x || a.y > b.y || a.z > b.z;
+}
+
+
+inline extern
+int
+p3disnotequal (
+    const struct POINT3D a,
+    const struct POINT3D b
+)
+{
+    return a.z != b.z || a.y != b.y || a.x != b.x;
 }
 
 
