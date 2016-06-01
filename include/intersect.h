@@ -56,8 +56,7 @@ intersect3d (
     struct POINT3D bmin,
     struct POINT3D bmax
 )
-// returns: 0 if non-intersecting: min, max will be unchanged
-//          non-0 if intersecting: min, max set to intersection
+// returns: 0 if non-intersecting, else non-0 if non-empty intersection
 {
     if( !min || !max ) return 0;
 
