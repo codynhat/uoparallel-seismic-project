@@ -1,6 +1,6 @@
 #!/bin/sh
 
-VELFILE="../data/velocities-241-241-51.vbox"
+VELFILE="../data/velocity-241-241-51.vbox"
 STARTFILE="../docs/start-4.txt"
 OUTFILE="traveltime.ttbox"
 
