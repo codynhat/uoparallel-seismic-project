@@ -1,7 +1,7 @@
 #!/usr/bin/make -f
 
 CC ?= cc
-CCFLAGS = -std=c11 -O3 -Wall -Wfatal-errors -Wpedantic -Winline
+CCFLAGS = -std=c99 -O3 -Wall -Wfatal-errors -Winline
 INCLUDE = -I../include
 RM ?= rm -f
 
