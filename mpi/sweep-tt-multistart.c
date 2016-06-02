@@ -89,6 +89,12 @@ const char ttbox_sig[4] = {'t', 't', 'b', 'x'};
 // structs
 ////////////////////////////////////////////////////////////////////////////////
 
+struct FORWARDSTAR {
+  struct POINT3D pos;
+  float halfdistance;
+};
+
+
 struct NEIGHBOR {
   struct POINT3D relation; // (-1,-1,-1) to (1,1,1)
   int rank;                // MPI rank
@@ -99,16 +105,24 @@ struct NEIGHBOR {
 
 struct STATE {
   struct ARGS args;              // parsed command-line arguments
+
   int numranks, myrank;          // MPI information
   struct POINT3D rankdims;       // number of ranks along each axis 
   struct POINT3D rankcoords;     // my rank coordinates
+
   struct POINT3D gmin;           // global minimum coordinate of any rank
   struct POINT3D gmax;           // global maximum coordinate of any rank
   struct FLOATBOX vbox;          // contains velocity data and region
+
   struct FLOATBOX ttbox;         // contains travel time data and region
   struct POINT3D ttstart;        // for now just one ttbox and one ttstart
+  long numsweeps;                // counts how many sweeps this rank has done
+
   struct NEIGHBOR neighbors[26]; // could be 0 to 26 actual neighbors
   int numneighbors;              // 0 to 26
+
+  struct FORWARDSTAR star[FSMAX];
+  int numinstar;
 };
 
 
@@ -125,6 +139,8 @@ void do_loaddatafromfiles( struct STATE *state );
 void do_preparempibuffers( struct STATE *state );
 void do_preparettbox( struct STATE *state );
 void do_shutdown( struct STATE *state );
+long do_sweep( struct STATE *state );
+void do_workloop( struct STATE *state );
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -154,6 +170,14 @@ main (
 
   // ttbox == travel time FLOATBOX: includes ghost regions
   do_preparettbox( &state );
+
+  // will stay in here for a while
+  do_workloop( &state );
+
+  // don't need these anymore
+  do_freempibuffers( &state );
+
+  // TODO: save travel time volume to somewhere
 
   // free buffers and shutdown MPI and such
   do_shutdown( &state );
@@ -440,6 +464,152 @@ do_shutdown (
   MPI_Barrier( MPI_COMM_WORLD );
   MPI_Finalize();
   exit(0);
+}
+
+
+void
+do_workloop (
+  struct STATE *state
+)
+{
+  state->numsweeps = 0;
+
+  for(;;) { // infinite loop
+
+    state->numsweeps++;
+    printf( "%d: doing sweep %ld...\n", state->myrank, state->numsweeps );
+    long sweepchanges = do_sweep( state );
+    printf (
+      "%d: sweep %ld number of changes: %ld\n",
+      state->myrank, state->numsweeps, sweepchanges
+    );
+
+    if( state->numranks == 0 ) {
+      // only one rank total, so don't bother with MPI
+      if( sweepchanges < 1 ) break;
+    }
+    else {
+      // more than one rank: need to share information
+
+      char anychange = 0;
+      if( state->myrank == 0 ) {
+        // rank 0 collects and shares global change status
+
+        // start with my own sweep changes
+        anychange = sweepchanges > 0 ? 1 : 0;
+
+        // collect others' changes
+        for( int r = 1; r < state->numranks; r++ ) {
+          char otherchange = 0;
+          MPI_Recv( &otherchange, 1, MPI_BYTE, r, r, MPI_COMM_WORLD, MPI_STATUS_IGNORE );
+          anychange |= otherchange;
+        }
+      }
+      else {
+        // this is NOT rank 0
+        char mychange = sweepchanges > 0 ? 1 : 0;
+        MPI_Send( &mychange, 1, MPI_BYTE, 0, state->myrank, MPI_COMM_WORLD );
+      }
+
+      // share anychange from rank 0 to everyone else
+      MPI_Bcast( &anychange, 1, MPI_BYTE, 0, MPI_COMM_WORLD );
+
+      if( !anychange ) return;
+
+      // TODO: MPI non-blocking copy and send to neighbors
+      // TODO: MPI non-blocking receives from neighbors
+      // TODO: MPI blocking wait for receives to finish
+      // TODO: copy received data into travel time volumes
+
+    }
+  }
+}
+
+
+long
+do_sweep (
+  struct STATE *state  
+)
+{
+  // copy some state into local stack memory for fastness
+  struct FLOATBOX vbox = state->vbox;
+  struct FLOATBOX ttbox = state->ttbox;
+  struct POINT3D ttstart = state->ttstart;
+  struct POINT3D *star = state->star;
+  int numinstar = state->numinstar;
+
+  // count how many (if any) values we change
+  long changes = 0;
+
+  #pragma omp parallel for private(here, there, l, vel_here, vel_there, tt_here, tt_there, delay)\
+    default(shared) reduction(+:change) schedule(dynamic) num_threads(16)
+  //#pragma omp parallel for private(oi, oj, ok, x, y, z, l, tt, tto, delay) \
+    default(shared) reduction(+:change) schedule(dynamic) num_threads(16)
+  for( struct POINT3D here = vbox.imin; here.x <= vbox.imax.x; here.x++ ) {
+    for( here.y = vbox.imin.y; here.y <= vbox.imax.y; here.y++ ) {
+      for( here.z = vbox.imin.z; here.z <= vbox.imax.z; here.z++ ) {
+
+        float vel_here = boxgetglobal( vbox, here );
+        float tt_here = boxgetglobal( ttbox, here );
+
+        for( int l = 0; l < numinstar; l++ ) {
+
+          // find point in forward star based on offsets
+          struct POINT3D there = p3daddp3d( here, star[l].pos );
+
+          // if 'there' is outside the boundaries, then skip
+          if (
+            p3disless( there, vbox.omin ) ||
+            p3dismore( there, vbox.omax )
+          ) {
+            continue;
+          }
+          
+          // compute delay from 'here' to 'there' with endpoint average
+          float vel_there = boxgetglobal( vbox, there );
+          float delay = star[l].distance * (vel_here + vel_there) * 0.5f;
+          
+          // ignore the starting point
+          if( p3disnotequal( here, ttstart ) ) {
+
+            float tt_there = boxgetglobal( ttbox, there );
+
+            // if offset point has infinity travel time, then update
+            if ((tt_here == INFINITY) && (tt_there == INFINITY)) {
+              continue;
+            }
+
+            if ((tt_here != INFINITY) && (tt_there == INFINITY)) {
+              boxputglobal( ttbox, there, delay + tt_here );
+              change++;
+              continue;
+            }
+
+            if ((tt_here == INFINITY) && (tt_there != INFINITY)) {
+              boxputglobal( ttbox, here, delay + tt_there );
+              change++;
+              continue;
+            }
+
+            if ((tt_here != INFINITY) && (tt_there != INFINITY)) {
+              // if a shorter travel time through 'there', update 'here'
+              if ((delay + tt_there) < tt_here) {
+                boxputglobal( ttbox, here, delay + tt_there );
+                change++;
+              }
+              // if a shorter travel time through 'here', update 'there'
+              else if ((delay + tt_here) < tt_there) {
+                boxputglobal( ttbox, there, delay + tt_here );
+                change++;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return change;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
