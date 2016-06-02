@@ -8,8 +8,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #include "parseargs.h"
-#include "forwardstar.h"
-#include "sweepxyz.h"
 
 
 #include "boxfiler.h"
@@ -33,6 +31,7 @@
 
 #define	FSRADIUSMAX	7 // maximum radius forward star
 #define FSMAX 818     // maximum number of points in a forward star
+#define FSDELTA 10.0  // distance / delay multiplier
 #define STARTMAX 12   // maximum number of starting points
 #define GHOSTDEPTH FSRADIUSMAX
 
@@ -121,7 +120,7 @@ struct STATE {
   struct NEIGHBOR neighbors[26]; // could be 0 to 26 actual neighbors
   int numneighbors;              // 0 to 26
 
-  struct FORWARDSTAR star[FSMAX];
+  struct FORWARDSTAR *star;      // remember to free later
   int numinstar;
 };
 
@@ -137,6 +136,7 @@ void do_initmpi( struct STATE *state, int argc, char *argv[] );
 void do_initstate( struct STATE *state );
 void do_loaddatafromfiles( struct STATE *state );
 void do_preparempibuffers( struct STATE *state );
+void do_preparestar( struct STATE *state );
 void do_preparettbox( struct STATE *state );
 void do_shutdown( struct STATE *state );
 long do_sweep( struct STATE *state );
@@ -160,6 +160,12 @@ main (
   do_initstate( &state );
   do_initmpi( &state, argc, argv );
   do_getargs( &state, argc, argv );
+
+  // show some OpenMP information
+  if( state.myrank == 0 ) printf( "openMP max threads: %d\n", omp_get_max_threads() );
+
+  // read forward star
+  do_preparestar( &state );
 
   // these functions do different things depending on this rank
   do_loaddatafromfiles( &state );
@@ -215,7 +221,9 @@ do_getargs (
   if( !parseargs( &state->args, argc, argv ) ) {
     if( state->myrank == 0 ) {
       printf(
-        "usage: %s <in:velocity.vbox> <in:startpoints.txt> <out:traveltimes.ttbox>\n",
+        "usage: %s"
+        " <in:velocity.vbox> <in:startpoints.txt> <in:forwardstar.txt>"
+        " <out:traveltimes.ttbox>\n",
         argv[0]
       );
       fflush( stdout );
@@ -417,6 +425,62 @@ do_preparempibuffers (
 
 
 void
+do_preparestar (
+  struct STATE *state
+)
+{
+  FILE *infile;
+  if( NULL != (infile = fopen( state->args.forwardstarfilename, "r" )) ) {
+
+    int starsize = 0;
+    if( 1 == fscanf( infile, "%d", &starsize ) && starsize > 0 ) {
+
+      struct FORWARDSTAR *star = malloc( starsize * sizeof(struct FORWARDSTAR) );
+
+      int bad = 0;
+      for( int i = 0; i < starsize; i++ ) {
+        struct POINT3D pos;
+
+        if( 3 == fscanf( infile, "%d %d %d", &pos.x, &pos.y, &pos.z ) ) {
+          star[i].pos = pos;
+          star[i].halfdistance = FSDELTA * 0.5 * sqrt (
+            pos.x * pos.x + pos.y * pos.y + pos.z * pos.z
+          );
+        }
+        else {
+          bad = 1;
+          break;
+        }
+      }
+      if( !bad ) {
+        fclose( infile );
+        state->star = star;
+        state->numinstar = starsize;
+        printf (
+          "%d: forward star loaded from %s\n",
+          state->myrank, state->args.forwardstarfilename
+        );
+        return;
+      }
+    }
+    // read error: probably wrong file or bad format or something
+    fprintf (
+      stderr, "%d: error parsing forward star file %d\n",
+      state->myrank, state->args.forwardstarfilename
+    );
+  }
+  else { // fopen failed
+    fprintf (
+      stderr, "%d: failed to open forward star file: %s\n",
+      state->myrank, state->args.forwardstarfilename
+    );
+  }
+
+  MPI_Abort( MPI_COMM_WORLD, 1 );
+}
+
+
+void
 do_preparettbox (
   struct STATE *state
 )
@@ -467,6 +531,105 @@ do_shutdown (
 }
 
 
+long
+do_sweep (
+  struct STATE *state  
+)
+{
+  // copy some state into local stack memory for fastness
+  struct FLOATBOX vbox = state->vbox;
+  struct FLOATBOX ttbox = state->ttbox;
+  struct POINT3D ttstart = state->ttstart;
+  struct FORWARDSTAR *star = state->star;
+  int numinstar = state->numinstar;
+
+  // count how many (if any) values we change
+  long changes = 0;
+
+  // TODO: remove
+
+  // things that openMP needs to know about
+  struct POINT3D here, there;
+  float vel_here, vel_there;
+  float tt_here, tt_there;
+  float delay;
+
+  int l;
+
+  #pragma omp parallel for private(here, there, l, vel_here, vel_there, tt_here, tt_there, delay)\
+    default(shared) reduction(+:changes) schedule(dynamic) num_threads(16)
+  //#pragma omp parallel for private(oi, oj, ok, x, y, z, l, tt, tto, delay) \
+    default(shared) reduction(+:change) schedule(dynamic) num_threads(16)
+  for( int x = vbox.imin.x; x <= vbox.imax.x; x++ ) {
+    printf( "%d: x = %d\n", state->myrank, x );
+    for( int y = vbox.imin.y; y <= vbox.imax.y; y++ ) {
+      for( int z = vbox.imin.z; z <= vbox.imax.z; z++ ) {
+
+        here = p3d( x, y, z );
+        vel_here = boxgetglobal( vbox, here );
+        tt_here = boxgetglobal( ttbox, here );
+
+        for( l = 0; l < numinstar; l++ ) {
+
+          // find point in forward star based on offsets
+          there = p3daddp3d( here, star[l].pos );
+
+          // if 'there' is outside the boundaries, then skip
+          if (
+            p3disless( there, vbox.omin ) ||
+            p3dismore( there, vbox.omax )
+          ) {
+            continue;
+          }
+          
+          // compute delay from 'here' to 'there' with endpoint average
+          vel_there = boxgetglobal( vbox, there );
+          delay = star[l].halfdistance * (vel_here + vel_there);
+          
+          // ignore the starting point
+          if( p3disnotequal( here, ttstart ) ) {
+
+            tt_there = boxgetglobal( ttbox, there );
+
+            // if offset point has infinity travel time, then update
+            if ((tt_here == INFINITY) && (tt_there == INFINITY)) {
+              continue;
+            }
+
+            if ((tt_here != INFINITY) && (tt_there == INFINITY)) {
+              boxputglobal( ttbox, there, delay + tt_here );
+              changes++;
+              continue;
+            }
+
+            if ((tt_here == INFINITY) && (tt_there != INFINITY)) {
+              boxputglobal( ttbox, here, delay + tt_there );
+              changes++;
+              continue;
+            }
+
+            if ((tt_here != INFINITY) && (tt_there != INFINITY)) {
+              // if a shorter travel time through 'there', update 'here'
+              if ((delay + tt_there) < tt_here) {
+                boxputglobal( ttbox, here, delay + tt_there );
+                changes++;
+              }
+              // if a shorter travel time through 'here', update 'there'
+              else if ((delay + tt_here) < tt_there) {
+                boxputglobal( ttbox, there, delay + tt_here );
+                changes++;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return changes;
+}
+
+
 void
 do_workloop (
   struct STATE *state
@@ -480,7 +643,7 @@ do_workloop (
     printf( "%d: doing sweep %ld...\n", state->myrank, state->numsweeps );
     long sweepchanges = do_sweep( state );
     printf (
-      "%d: sweep %ld number of changes: %ld\n",
+      "%d: sweep %ld: number of changes: %ld\n",
       state->myrank, state->numsweeps, sweepchanges
     );
 
@@ -523,93 +686,6 @@ do_workloop (
 
     }
   }
-}
-
-
-long
-do_sweep (
-  struct STATE *state  
-)
-{
-  // copy some state into local stack memory for fastness
-  struct FLOATBOX vbox = state->vbox;
-  struct FLOATBOX ttbox = state->ttbox;
-  struct POINT3D ttstart = state->ttstart;
-  struct POINT3D *star = state->star;
-  int numinstar = state->numinstar;
-
-  // count how many (if any) values we change
-  long changes = 0;
-
-  #pragma omp parallel for private(here, there, l, vel_here, vel_there, tt_here, tt_there, delay)\
-    default(shared) reduction(+:change) schedule(dynamic) num_threads(16)
-  //#pragma omp parallel for private(oi, oj, ok, x, y, z, l, tt, tto, delay) \
-    default(shared) reduction(+:change) schedule(dynamic) num_threads(16)
-  for( struct POINT3D here = vbox.imin; here.x <= vbox.imax.x; here.x++ ) {
-    for( here.y = vbox.imin.y; here.y <= vbox.imax.y; here.y++ ) {
-      for( here.z = vbox.imin.z; here.z <= vbox.imax.z; here.z++ ) {
-
-        float vel_here = boxgetglobal( vbox, here );
-        float tt_here = boxgetglobal( ttbox, here );
-
-        for( int l = 0; l < numinstar; l++ ) {
-
-          // find point in forward star based on offsets
-          struct POINT3D there = p3daddp3d( here, star[l].pos );
-
-          // if 'there' is outside the boundaries, then skip
-          if (
-            p3disless( there, vbox.omin ) ||
-            p3dismore( there, vbox.omax )
-          ) {
-            continue;
-          }
-          
-          // compute delay from 'here' to 'there' with endpoint average
-          float vel_there = boxgetglobal( vbox, there );
-          float delay = star[l].distance * (vel_here + vel_there) * 0.5f;
-          
-          // ignore the starting point
-          if( p3disnotequal( here, ttstart ) ) {
-
-            float tt_there = boxgetglobal( ttbox, there );
-
-            // if offset point has infinity travel time, then update
-            if ((tt_here == INFINITY) && (tt_there == INFINITY)) {
-              continue;
-            }
-
-            if ((tt_here != INFINITY) && (tt_there == INFINITY)) {
-              boxputglobal( ttbox, there, delay + tt_here );
-              change++;
-              continue;
-            }
-
-            if ((tt_here == INFINITY) && (tt_there != INFINITY)) {
-              boxputglobal( ttbox, here, delay + tt_there );
-              change++;
-              continue;
-            }
-
-            if ((tt_here != INFINITY) && (tt_there != INFINITY)) {
-              // if a shorter travel time through 'there', update 'here'
-              if ((delay + tt_there) < tt_here) {
-                boxputglobal( ttbox, here, delay + tt_there );
-                change++;
-              }
-              // if a shorter travel time through 'here', update 'there'
-              else if ((delay + tt_here) < tt_there) {
-                boxputglobal( ttbox, there, delay + tt_here );
-                change++;
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-
-  return change;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
