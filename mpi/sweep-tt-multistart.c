@@ -32,9 +32,8 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #define	FSRADIUSMAX	7 // maximum radius forward star
-#define FSMAX 818     //maximum # of points in a forward star */
-//#define MODELMAX	250	/* maximum model dimension in X,Y,Z */
-//#define STARTMAX 12 /* maximum starting points */
+#define FSMAX 818     // maximum number of points in a forward star
+#define STARTMAX 12   // maximum number of starting points
 #define GHOSTDEPTH FSRADIUSMAX
 
 // TODO: remove
@@ -90,19 +89,26 @@ const char ttbox_sig[4] = {'t', 't', 'b', 'x'};
 // structs
 ////////////////////////////////////////////////////////////////////////////////
 
+struct NEIGHBOR {
+  struct POINT3D relation; // (-1,-1,-1) to (1,1,1)
+  int rank;                // MPI rank
+  struct FLOATBOX send;    // send buffer
+  struct FLOATBOX recv;    // receive buffer
+};
+
+
 struct STATE {
-  struct ARGS args;          // parsed command-line arguments
-  int numranks, myrank;      // MPI information
-  struct POINT3D rankdims;   // number of ranks along each axis 
-  struct POINT3D rankcoords; // my rank coordinates
-  struct POINT3D gmin;       // global minimum coordinate of any rank
-  struct POINT3D gmax;       // global maximum coordinate of any rank
-  struct FLOATBOX vbox;      // contains velocity data and region
-  struct {
-    int rank;                // if < 0 then no neighbor here, else MPI rank
-    struct FLOATBOX send;    // send buffer
-    struct FLOATBOX recv;    // receive buffer
-  } neighbors[3][3][3];      // for now assume only split along x,y plane
+  struct ARGS args;              // parsed command-line arguments
+  int numranks, myrank;          // MPI information
+  struct POINT3D rankdims;       // number of ranks along each axis 
+  struct POINT3D rankcoords;     // my rank coordinates
+  struct POINT3D gmin;           // global minimum coordinate of any rank
+  struct POINT3D gmax;           // global maximum coordinate of any rank
+  struct FLOATBOX vbox;          // contains velocity data and region
+  struct FLOATBOX ttbox;         // contains travel time data and region
+  struct POINT3D ttstart;        // for now just one ttbox and one ttstart
+  struct NEIGHBOR neighbors[26]; // could be 0 to 26 actual neighbors
+  int numneighbors;              // 0 to 26
 };
 
 
@@ -111,11 +117,13 @@ struct STATE {
 // note: prefix do_* because of name conflicts with dynamic libraries
 ////////////////////////////////////////////////////////////////////////////////
 
+void do_freempibuffers( struct STATE *state );
 void do_getargs( struct STATE *state, int argc, char *argv[] );
 void do_initmpi( struct STATE *state, int argc, char *argv[] );
 void do_initstate( struct STATE *state );
 void do_loaddatafromfiles( struct STATE *state );
-void do_preparebuffers( struct STATE *state );
+void do_preparempibuffers( struct STATE *state );
+void do_preparettbox( struct STATE *state );
 void do_shutdown( struct STATE *state );
 
 
@@ -129,16 +137,28 @@ main (
   char *argv[]
 )
 {
+  // all the state we care about is in here
   struct STATE state;
 
+  // all MPI ranks do these functions equally
   do_initstate( &state );
   do_initmpi( &state, argc, argv );
   do_getargs( &state, argc, argv );
-  do_loaddatafromfiles( &state );
-  do_preparebuffers( &state );
 
+  // these functions do different things depending on this rank
+  do_loaddatafromfiles( &state );
+  do_preparempibuffers( &state );
+
+  // TODO: read start position from somewhere
+  state.ttstart = p3d( 5, 5, 5 );
+
+  // ttbox == travel time FLOATBOX: includes ghost regions
+  do_preparettbox( &state );
+
+  // free buffers and shutdown MPI and such
   do_shutdown( &state );
 
+  // success
   return 0;
 }
 
@@ -146,6 +166,20 @@ main (
 ////////////////////////////////////////////////////////////////////////////////
 // other functions
 ////////////////////////////////////////////////////////////////////////////////
+
+void 
+do_freempibuffers (
+  struct STATE *state
+)
+{
+  for( int n = 0; n < state->numneighbors; n++ ) {
+    struct NEIGHBOR *neighbor = state->neighbors + n;
+    boxfree( &neighbor->send );
+    boxfree( &neighbor->recv );
+  }
+  state->numneighbors = 0;
+}
+
 
 void
 do_getargs (
@@ -197,6 +231,8 @@ do_initstate (
 )
 {
   boxinit( &state->vbox );
+  boxinit( &state->ttbox );
+  state->numneighbors = 0;
 }
 
 
@@ -214,7 +250,7 @@ do_loaddatafromfiles (
       state->myrank, state->args.velocityfilename
     );
     fflush( stdout );
-    do_shutdown( state );
+    MPI_Abort( MPI_COMM_WORLD, 1 );
   }
 
   // store file coordinates
@@ -241,7 +277,7 @@ do_loaddatafromfiles (
       state->myrank, state->args.velocityfilename
     );
     fflush( stdout );
-    do_shutdown( state );
+    MPI_Abort( MPI_COMM_WORLD, 1 );
   }
   printf(
     "%d: loaded my region from velocity file: (%d, %d, %d) to (%d, %d, %d)\n",
@@ -253,18 +289,35 @@ do_loaddatafromfiles (
 
 
 void
-do_preparebuffers (
+do_preparempibuffers (
   struct STATE *state
 )
 // allocates send and receive buffers for adjacent neighbors
 {
+  printf( "%d: allocating MPI send and receive buffers...\n", state->myrank );
+
+  // number of values (not bytes) total in each type of buffer for this rank
+  long sendsize = 0, recvsize = 0;
+
+  // start with 0 neighbors, and increment as they are discovered
+  state->numneighbors = 0;
+
+  // find all neighbors
   for( int x = -1; x <= 1; x++ ) {
     for( int y = -1; y <= 1; y++ ) {
       for( int z = -1; z <= 1; z++ ) {
         if( x || y || z ) { // (0,0,0) is me
-          struct POINT3D ncoords = p3daddp3d( state->rankcoords, p3d( x, y, z ) );
+
+          struct POINT3D relation = p3d( x, y, z );
+          struct POINT3D ncoords = p3daddp3d( state->rankcoords, relation );
+
           int nrank = mpifindrankfromrankcoords( state->rankdims, ncoords );
           if( nrank >= 0 ) {
+
+            struct NEIGHBOR *neighbor = state->neighbors + state->numneighbors++;
+
+            neighbor->relation = relation; 
+            neighbor->rank = nrank;
 
             // neighbor's inner region (no ghost)
             struct POINT3D nimin, nimax;
@@ -286,6 +339,7 @@ do_preparebuffers (
             struct POINT3D smin, smax;
             // recv intersection: my ghost with neighbor's inner region
             struct POINT3D rmin, rmax;
+
             // compute intersections
             if (
               !intersect3d (
@@ -295,6 +349,7 @@ do_preparebuffers (
                 &rmin, &rmax, nimin, nimax, state->vbox.omin, state->vbox.omax
               )
             ) {
+              // intersection failed for some reason (this shouldn't happen)
               fprintf (
                 stderr,
                 "%d: error: no intersection with neighbor %d, but there should be!\n",
@@ -302,22 +357,73 @@ do_preparebuffers (
               );
             }
             else {
-              printf (
-                "%d: send buffer for neighbor %d: (%d, %d, %d) to (%d, %d, %d)\n",
-                state->myrank, nrank,
-                smin.x, smin.y, smin.z, smax.x, smax.y, smax.z
-              );
-              printf (
-                "%d: recv buffer for neighbor %d: (%d, %d, %d) to (%d, %d, %d)\n",
-                state->myrank, nrank,
-                rmin.x, rmin.y, rmin.z, rmax.x, rmax.y, rmax.z
-              );
+              // allocate memory for send and recv buffers for this neighbor
+              if (
+                !boxalloc( &neighbor->send, smin, smax, smin, smax ) ||
+                !boxalloc( &neighbor->recv, rmin, rmax, rmin, rmax )
+              ) {
+                fprintf (
+                  stderr,
+                  "%d: error: memory allocation failure when preparing ghost buffers:\n"
+                  "%d:        my rank coords: (%d, %d, %d)\n"
+                  "%d:        neighbor %d rank coords: (%d, %d, %d)\n",
+                  state->myrank,
+                  state->myrank,
+                  state->rankcoords.x, state->rankcoords.y, state->rankcoords.z,
+                  state->myrank, neighbor->rank, ncoords.x, ncoords.y, ncoords.z
+                );
+                fflush( stdout );
+                MPI_Abort( MPI_COMM_WORLD, 1 );
+              }
+              sendsize += neighbor->send.offset.m + 1;
+              recvsize += neighbor->recv.offset.m + 1;
             }
           }
         }
       }
     }
   }
+  printf(
+    "%d: done allocating buffers: %ld bytes for sending, %ld bytes for receiving\n",
+    state->myrank,
+    sendsize * sizeof(*state->vbox.flat),
+    recvsize * sizeof(*state->vbox.flat)
+  );
+}
+
+
+void
+do_preparettbox (
+  struct STATE *state
+)
+{
+  struct POINT3D omin = state->vbox.omin;
+  struct POINT3D omax = state->vbox.omax;
+  struct POINT3D imin = state->vbox.imin;
+  struct POINT3D imax = state->vbox.imax;
+
+  // allocate memory
+  if( !boxalloc( &state->ttbox, omin, omax, imin, imax ) ) {
+    fprintf (
+      stderr,
+      "%d: error: memory allocation failure for travel time volume:\n"
+      "%d:        outer: (%d, %d, %d) to (%d, %d, %d)\n"
+      "%d:        inner: (%d, %d, %d) to (%d, %d, %d)\n",
+      state->myrank,
+      state->myrank, omin.x, omin.y, omin.z, omax.x, omax.y, omax.z,
+      state->myrank, imin.x, imin.y, imin.z, imax.x, imax.y, imax.z
+    );
+    MPI_Abort( MPI_COMM_WORLD, 1 );
+  }
+
+  // set all values except start position to INFINITY
+  boxsetall( state->ttbox, INFINITY );
+  boxputglobal( state->ttbox, state->ttstart, 0.f );
+
+  printf (
+    "%d: travel time volume allocated and set to INFINITY except (%d, %d, %d)\n",
+    state->myrank, state->ttstart.x, state->ttstart.y, state->ttstart.z
+  );
 }
 
 
@@ -326,6 +432,8 @@ do_shutdown (
   struct STATE *state
 )
 {
+  do_freempibuffers( state );
+  boxfree( &state->ttbox );
   boxfree( &state->vbox );
   printf( "%d: shutting down normally\n", state->myrank );
   fflush( stdout );
