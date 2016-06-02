@@ -19,6 +19,7 @@
 struct ARGS {
   const char *velocityfilename;
   const char *startpointsfilename;
+  const char *forwardstarfilename;
   const char *traveltimefilename;
 };
 
@@ -38,12 +39,13 @@ parseargs (
 // success: returns non-0
 {
   // check arguments
-  if( argc != 4 ) return 0;
+  if( argc != 5 ) return 0;
 
   // filenames
   args->velocityfilename = argv[1];
   args->startpointsfilename = argv[2];
-  args->traveltimefilename = argv[3];
+  args->forwardstarfilename = argv[3];
+  args->traveltimefilename = argv[4];
 
   // success
   return 1;
