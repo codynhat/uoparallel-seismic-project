@@ -56,6 +56,7 @@ void do_preparestar( struct STATE *state );
 void do_preparettbox( struct STATE *state );
 void do_shutdown( struct STATE *state );
 void do_workloop( struct STATE *state );
+void do_writetttofile( struct STATE *state );
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -87,7 +88,7 @@ main (
   do_preparempibuffers( &state );
 
   // TODO: read start position from somewhere
-  state.ttstart = p3d( 5, 5, 5 );
+  state.ttstart = p3d( 152, 20, 1 );
 
   // ttbox == travel time FLOATBOX: includes ghost regions
   do_preparettbox( &state );
@@ -98,7 +99,8 @@ main (
   // don't need these anymore
   do_freempibuffers( &state );
 
-  // TODO: save travel time volume to somewhere
+  // save travel time volume from this node
+  do_writetttofile( &state );
 
   // free buffers and shutdown MPI and such
   do_shutdown( &state );
@@ -137,8 +139,7 @@ do_getargs (
     if( state->myrank == 0 ) {
       printf(
         "usage: %s"
-        " <in:velocity.vbox> <in:startpoints.txt> <in:forwardstar.txt>"
-        " <out:traveltimes.ttbox>\n",
+        " <in:velocity.vbox> <in:startpoints.txt> <in:forwardstar.txt>\n",
         argv[0]
       );
       fflush( stdout );
@@ -487,6 +488,7 @@ do_shutdown (
   struct STATE *state
 )
 {
+  //free( state->star );
   do_freempibuffers( state );
   boxfree( &state->ttbox );
   boxfree( &state->vbox );
@@ -554,6 +556,50 @@ do_workloop (
     }
   }
 }
+
+
+void
+do_writetttofile (
+  struct STATE *state
+)
+{
+  // TODO: for now, just writing to my own text file:
+  //       filename: tt_mincoords_maxcoords.txt
+  //       x,y,z,val
+
+  const struct FLOATBOX ttbox = state->ttbox;
+
+  char filename[1024];
+  sprintf (
+    filename,
+    "tt_%d-%d-%d_to_%d-%d-%d.txt",
+    ttbox.omin.x, ttbox.omin.y, ttbox.omin.z,
+    ttbox.omax.x, ttbox.omax.y, ttbox.omax.z
+  );
+
+  FILE *outfile = fopen( filename, "w" );
+  if( outfile == NULL ) {
+    fprintf (
+      stderr, "%d: error: can't open output file %s!\n",
+      state->myrank, filename
+    );
+    MPI_Abort( MPI_COMM_WORLD, 1 );
+  }
+
+  for( int x = ttbox.omin.x; x <= ttbox.omax.x; x++ ) {
+    for( int y = ttbox.omin.y; y <= ttbox.omax.y; y++ ) {
+      for( int z = ttbox.omin.z; z <= ttbox.omax.z; z++ ) {
+        fprintf (
+          outfile, "%d,%d,%d,%g\n",
+          x, y, z, boxgetglobal( ttbox, p3d( x, y, y ) )
+        );
+      }
+    }
+  }
+
+  fclose( outfile );
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // cruft
