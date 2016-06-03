@@ -14,7 +14,7 @@
 #include "intersect.h"
 #include "mpihelpers.h"
 #include "point3d.h"
-#include "timing.h"
+//#include "timing.h"
 
 
 #include <math.h>
