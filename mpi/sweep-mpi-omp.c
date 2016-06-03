@@ -3,35 +3,23 @@
 ////////////////////////////////////////////////////////////////////////////////
 //
 // TODO:
-//   * implement MPI communication of ghost buffers
 //   * support multiple start points
 //   * write final results to a file or something
+//   * when things are mostly working, remove all these status printf's
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-// TODO: remove at some point
-const int MAXSWEEPS = 1;
+// TODO: remove at some point: this stops all work after just one sweep
+const int MAXSWEEPS = 2;
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // includes
 ////////////////////////////////////////////////////////////////////////////////
 
 #include "parseargs.h"
-
-
-#include "boxfiler.h"
-#include "floatbox.h"
-#include "intersect.h"
-#include "mpihelpers.h"
-#include "point3d.h"
-
-
-#include <math.h>
-#include <mpi.h>
-#include <omp.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <sys/time.h>
+#include "common.h"       // has struct FORWARDSTAR, NEIGHBOR, STATE
+#include "sweep.h"        // has some version of do_sweep( STATE* )
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -50,48 +38,6 @@ const int MAXSWEEPS = 1;
 ////////////////////////////////////////////////////////////////////////////////
 
 const char vbox_sig[4] = {'v', 'b', 'o', 'x'};
-const char ttbox_sig[4] = {'t', 't', 'b', 'x'};
-
-
-////////////////////////////////////////////////////////////////////////////////
-// structs
-////////////////////////////////////////////////////////////////////////////////
-
-struct FORWARDSTAR {
-  struct POINT3D pos;
-  float halfdistance;
-};
-
-
-struct NEIGHBOR {
-  struct POINT3D relation; // (-1,-1,-1) to (1,1,1)
-  int rank;                // MPI rank
-  struct FLOATBOX send;    // send buffer
-  struct FLOATBOX recv;    // receive buffer
-};
-
-
-struct STATE {
-  struct ARGS args;              // parsed command-line arguments
-
-  int numranks, myrank;          // MPI information
-  struct POINT3D rankdims;       // number of ranks along each axis 
-  struct POINT3D rankcoords;     // my rank coordinates
-
-  struct POINT3D gmin;           // global minimum coordinate of any rank
-  struct POINT3D gmax;           // global maximum coordinate of any rank
-  struct FLOATBOX vbox;          // contains velocity data and region
-
-  struct FLOATBOX ttbox;         // contains travel time data and region
-  struct POINT3D ttstart;        // for now just one ttbox and one ttstart
-  long numsweeps;                // counts how many sweeps this rank has done
-
-  struct NEIGHBOR neighbors[26]; // could be 0 to 26 actual neighbors
-  int numneighbors;              // 0 to 26
-
-  struct FORWARDSTAR *star;      // remember to free later
-  int numinstar;
-};
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -104,11 +50,11 @@ void do_getargs( struct STATE *state, int argc, char *argv[] );
 void do_initmpi( struct STATE *state, int argc, char *argv[] );
 void do_initstate( struct STATE *state );
 void do_loaddatafromfiles( struct STATE *state );
+void do_sharempibuffers( struct STATE *state );
 void do_preparempibuffers( struct STATE *state );
 void do_preparestar( struct STATE *state );
 void do_preparettbox( struct STATE *state );
 void do_shutdown( struct STATE *state );
-long do_sweep( struct STATE *state );
 void do_workloop( struct STATE *state );
 
 
@@ -286,6 +232,51 @@ do_loaddatafromfiles (
   );
 
   boxfileclosebinary( &vboxfile );
+}
+
+
+void
+do_sharempibuffers (
+  struct STATE *state
+)
+{
+  const struct FLOATBOX ttbox = state->ttbox;
+
+  MPI_Request mpireqs[26 + 26]; // at most 26 neighbors send + recv
+  MPI_Status mpistats[26 + 26];
+  int reqnumber = 0;
+
+  // copy and send
+  for( int n = 0; n < state->numneighbors; n++ ) {
+    const struct FLOATBOX send = state->neighbors[n].send;
+    boxcopysubset( send, ttbox, send.omin, send.omax );
+    MPI_Isend (
+      send.flat, send.offset.m + 1, MPI_FLOAT,
+      state->neighbors[n].rank, state->myrank,
+      MPI_COMM_WORLD, &mpireqs[ reqnumber++ ]
+    );
+    printf( "%d: MPI_Isend done.\n", state->myrank );
+  }
+
+  // receive (don't block)
+  for( int n = 0; n < state->numneighbors; n++ ) {
+    const struct FLOATBOX recv = state->neighbors[n].recv;
+    MPI_Irecv (
+      recv.flat, recv.offset.m + 1, MPI_FLOAT,
+      state->neighbors[n].rank, state->neighbors[n].rank,
+      MPI_COMM_WORLD, &mpireqs[ reqnumber++ ]
+    );
+    printf( "%d: MPI_Irecv done.\n", state->myrank );
+  }
+
+  MPI_Waitall( reqnumber, mpireqs, mpistats );
+  printf( "%d: after MPI_waitall.\n", state->myrank );
+
+  // copy from recv buffers back to ttbox (ghost regions)
+  for( int n = 0; n < state->numneighbors; n++ ) {
+    const struct FLOATBOX recv = state->neighbors[n].recv;
+    boxcopysubset( ttbox, recv, recv.omin, recv.omax );
+  }
 }
 
 
@@ -507,96 +498,6 @@ do_shutdown (
 }
 
 
-long
-do_sweep (
-  struct STATE *state  
-)
-{
-  // copy some state into local stack memory for fastness
-  const struct FLOATBOX vbox = state->vbox;
-  const struct FLOATBOX ttbox = state->ttbox;
-  const struct POINT3D ttstart = state->ttstart;
-  const struct FORWARDSTAR * const star = state->star;
-  const int numinstar = state->numinstar;
-
-  // count how many (if any) values we change
-  long changes = 0;
-
-  #pragma omp parallel for\
-    default(shared) reduction(+:changes) schedule(dynamic) num_threads(16)
-  //#pragma omp parallel for private(oi, oj, ok, x, y, z, l, tt, tto, delay) \
-    default(shared) reduction(+:change) schedule(dynamic) num_threads(16)
-  for( int x = vbox.imin.x; x <= vbox.imax.x; x++ ) {
-    printf( "%d: x = %d\n", state->myrank, x );
-    for( int y = vbox.imin.y; y <= vbox.imax.y; y++ ) {
-      for( int z = vbox.imin.z; z <= vbox.imax.z; z++ ) {
-
-        const struct POINT3D here = p3d( x, y, z );
-
-        const float vel_here = boxgetglobal( vbox, here );
-        const float tt_here = boxgetglobal( ttbox, here );
-
-        for( int l = 0; l < numinstar; l++ ) {
-
-          // find point in forward star based on offsets
-          const struct POINT3D there = p3daddp3d( here, star[l].pos );
-
-          // if 'there' is outside the boundaries, then skip
-          if (
-            p3disless( there, vbox.omin ) ||
-            p3dismore( there, vbox.omax )
-          ) {
-            continue;
-          }
-          
-          // compute delay from 'here' to 'there' with endpoint average
-          const float vel_there = boxgetglobal( vbox, there );
-          const float delay = star[l].halfdistance * (vel_here + vel_there);
-          
-          // ignore the starting point
-          if( p3disnotequal( here, ttstart ) ) {
-
-            const float tt_there = boxgetglobal( ttbox, there );
-
-            // if offset point has infinity travel time, then update
-            if ((tt_here == INFINITY) && (tt_there == INFINITY)) {
-              continue;
-            }
-
-            if ((tt_here != INFINITY) && (tt_there == INFINITY)) {
-              boxputglobal( ttbox, there, delay + tt_here );
-              changes++;
-              continue;
-            }
-
-            if ((tt_here == INFINITY) && (tt_there != INFINITY)) {
-              boxputglobal( ttbox, here, delay + tt_there );
-              changes++;
-              continue;
-            }
-
-            if ((tt_here != INFINITY) && (tt_there != INFINITY)) {
-              // if a shorter travel time through 'there', update 'here'
-              if ((delay + tt_there) < tt_here) {
-                boxputglobal( ttbox, here, delay + tt_there );
-                changes++;
-              }
-              // if a shorter travel time through 'here', update 'there'
-              else if ((delay + tt_here) < tt_there) {
-                boxputglobal( ttbox, there, delay + tt_here );
-                changes++;
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-
-  return changes;
-}
-
-
 void
 do_workloop (
   struct STATE *state
@@ -649,11 +550,7 @@ do_workloop (
 
       if( !anychange ) return;
 
-      // TODO: MPI non-blocking copy and send to neighbors
-      // TODO: MPI non-blocking receives from neighbors
-      // TODO: MPI blocking wait for receives to finish
-      // TODO: copy received data into travel time volumes
-
+      do_sharempibuffers( state );
     }
   }
 }
