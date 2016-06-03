@@ -17,7 +17,7 @@
 
 long
 do_sweep (
-  struct STATE *state  
+  struct STATE *state
 )
 {
   // copy some state into local stack memory for fastness
@@ -30,8 +30,6 @@ do_sweep (
   // count how many (if any) values we change
   long changes = 0;
 
-  #pragma omp parallel for default(shared) \
-    reduction(+:changes) schedule(dynamic) num_threads(16)
   for( int x = vbox.imin.x; x <= vbox.imax.x; x++ ) {
     printf( "%d: x = %d\n", state->myrank, x );
     for( int y = vbox.imin.y; y <= vbox.imax.y; y++ ) {
@@ -54,11 +52,11 @@ do_sweep (
           ) {
             continue;
           }
-          
+
           // compute delay from 'here' to 'there' with endpoint average
           const float vel_there = boxgetglobal( vbox, there );
           const float delay = star[l].halfdistance * (vel_here + vel_there);
-          
+
           // ignore the starting point
           if( p3disnotequal( here, ttstart ) ) {
 
