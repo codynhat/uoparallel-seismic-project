@@ -29,6 +29,8 @@
 //   boxgetinner
 //   boxputinner
 //
+//   boxcopysubset
+//
 //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -210,6 +212,26 @@ boxputinner (
 // inner coordinates (from 0,0,0 to imax-imin+1)
 {
     box.flat[ boxindex( box, pt ) + box.offset.i ] = val;
+}
+
+
+void
+boxcopysubset (
+    const struct FLOATBOX dest,
+    const struct FLOATBOX source,
+    const struct POINT3D min,
+    const struct POINT3D max
+)
+// copies a subset in global coordinates from source to dest
+{
+    for( int x = min.x; x <= max.x; x++ ) {
+        for( int y = min.y; y <= max.y; y++ ) {
+            for( int z = min.z; z <= max.z; z++ ) {
+                struct POINT3D pt = {x, y, z};
+                boxputglobal( dest, pt, boxgetglobal( source, pt ) );
+            }
+        }
+    }
 }
 
 
