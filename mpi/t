@@ -5,4 +5,4 @@ STARTFILE="../docs/start-4.txt"
 FORWARDSTARFILE="../docs/818-FS.txt"
 OUTFILE="traveltime.ttbox"
 
-./sweep-tt-multistart $VELFILE $STARTFILE $FORWARDSTARFILE $OUTFILE
+./sweep-mpi-omp $VELFILE $STARTFILE $FORWARDSTARFILE $OUTFILE

@@ -5,14 +5,14 @@ INCLUDE = -I../include
 LIBS = -fopenmp
 DOCS=../docs
 
-PROGS = sweep-tt-multistart
+PROGS = sweep-mpi-omp
 
 all: $(PROGS)
 
 $(PROGS) : % : %.c
 	$(CC) $(MPI_COMPILE_FLAGS) $(LIBS) $(INCLUDE) $< $(MPI_LINK_FLAGS) -o $@
 
-job: sweep-tt-multistart
+job: sweep-mpi-omp
 	qsub -q generic run.sh
 
 clean:
