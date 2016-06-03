@@ -5,4 +5,4 @@ DIR=$HOME/uoparallel-seismic-project/mpi
 
 module load mpi
 cd $DIR
-mpirun -np 4 $DIR/sweep-tt-multistart > $DIR/output
+mpirun -np 4 $DIR/test.sh > $DIR/output
