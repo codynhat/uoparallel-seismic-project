@@ -1,7 +1,16 @@
 ////////////////////////////////////////////////////////////////////////////////
-// sweep-tt-multistart.c
+// sweep-mpi-omp.c
+////////////////////////////////////////////////////////////////////////////////
+//
+// TODO:
+//   * implement MPI communication of ghost buffers
+//   * support multiple start points
+//   * write final results to a file or something
+//
 ////////////////////////////////////////////////////////////////////////////////
 
+// TODO: remove at some point
+const int MAXSWEEPS = 1;
 
 ////////////////////////////////////////////////////////////////////////////////
 // includes
@@ -34,46 +43,6 @@
 #define FSDELTA 10.0  // distance / delay multiplier
 #define STARTMAX 12   // maximum number of starting points
 #define GHOSTDEPTH FSRADIUSMAX
-
-// TODO: remove
-//struct FORWARDSTAR {			/* forward start offset */
-//  int		i, j, k;	/* point coordinates */
-//  float		d;		/* distance to star center (0,0,0)*/
-//};
-
-
-// TODO: remove
-//struct MODEL {			/* model point */
-//  float		v;		/* velocity */
-//  float		tt[STARTMAX];	/* travel time for starting points */
-//};
-
-
-// TODO: remove
-//struct START {			/* starting point */
-//  int		i, j, k;	/* point coordinates */
-//};
-
-//int		changed[STARTMAX];
-
-//struct FORWARDSTAR fs[FSMAX];
-
-//struct FLOATBOX model;
-//struct FLOATBOX model_new;
-//struct FLOATBOX model_send;
-//struct FLOATBOX model_recv;
-
-//struct MODEL model[MODELMAX][MODELMAX][MODELMAX]
-
-
-//struct MODEL model_new[130][130][51];
-//struct MODEL transferS[4][130][130][51];
-//struct MODEL transferR[4][130][130][51];
-
-// TODO: remove
-//struct START start[STARTMAX], start_new;
-
-//int startinew,startjnew,stopinew,stopjnew;
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -250,7 +219,7 @@ do_initmpi (
   
   int bestx = splitsquare_numx( state->numranks );
   int besty = state->numranks / bestx;
-  int bestz = 1; // TODO: allow other than 1
+  int bestz = 1;
 
   state->rankdims = p3d( bestx, besty, bestz );
   state->rankcoords = mpifindrankcoordsfromrank( state->rankdims, state->myrank );
@@ -504,9 +473,16 @@ do_preparettbox (
     MPI_Abort( MPI_COMM_WORLD, 1 );
   }
 
-  // set all values except start position to INFINITY
+  // set all values to INFINITY
   boxsetall( state->ttbox, INFINITY );
-  boxputglobal( state->ttbox, state->ttstart, 0.f );
+
+  // if a start point is in this box, set it to 0
+  if (
+    !p3disless( state->ttstart, state->ttbox.omin ) &&
+    !p3dismore( state->ttstart, state->ttbox.omax )
+  ) {
+    boxputglobal( state->ttbox, state->ttstart, 0.f );
+  }
 
   printf (
     "%d: travel time volume allocated and set to INFINITY except (%d, %d, %d)\n",
@@ -537,26 +513,16 @@ do_sweep (
 )
 {
   // copy some state into local stack memory for fastness
-  struct FLOATBOX vbox = state->vbox;
-  struct FLOATBOX ttbox = state->ttbox;
-  struct POINT3D ttstart = state->ttstart;
-  struct FORWARDSTAR *star = state->star;
-  int numinstar = state->numinstar;
+  const struct FLOATBOX vbox = state->vbox;
+  const struct FLOATBOX ttbox = state->ttbox;
+  const struct POINT3D ttstart = state->ttstart;
+  const struct FORWARDSTAR * const star = state->star;
+  const int numinstar = state->numinstar;
 
   // count how many (if any) values we change
   long changes = 0;
 
-  // TODO: remove
-
-  // things that openMP needs to know about
-  struct POINT3D here, there;
-  float vel_here, vel_there;
-  float tt_here, tt_there;
-  float delay;
-
-  int l;
-
-  #pragma omp parallel for private(here, there, l, vel_here, vel_there, tt_here, tt_there, delay)\
+  #pragma omp parallel for\
     default(shared) reduction(+:changes) schedule(dynamic) num_threads(16)
   //#pragma omp parallel for private(oi, oj, ok, x, y, z, l, tt, tto, delay) \
     default(shared) reduction(+:change) schedule(dynamic) num_threads(16)
@@ -565,14 +531,15 @@ do_sweep (
     for( int y = vbox.imin.y; y <= vbox.imax.y; y++ ) {
       for( int z = vbox.imin.z; z <= vbox.imax.z; z++ ) {
 
-        here = p3d( x, y, z );
-        vel_here = boxgetglobal( vbox, here );
-        tt_here = boxgetglobal( ttbox, here );
+        const struct POINT3D here = p3d( x, y, z );
 
-        for( l = 0; l < numinstar; l++ ) {
+        const float vel_here = boxgetglobal( vbox, here );
+        const float tt_here = boxgetglobal( ttbox, here );
+
+        for( int l = 0; l < numinstar; l++ ) {
 
           // find point in forward star based on offsets
-          there = p3daddp3d( here, star[l].pos );
+          const struct POINT3D there = p3daddp3d( here, star[l].pos );
 
           // if 'there' is outside the boundaries, then skip
           if (
@@ -583,13 +550,13 @@ do_sweep (
           }
           
           // compute delay from 'here' to 'there' with endpoint average
-          vel_there = boxgetglobal( vbox, there );
-          delay = star[l].halfdistance * (vel_here + vel_there);
+          const float vel_there = boxgetglobal( vbox, there );
+          const float delay = star[l].halfdistance * (vel_here + vel_there);
           
           // ignore the starting point
           if( p3disnotequal( here, ttstart ) ) {
 
-            tt_there = boxgetglobal( ttbox, there );
+            const float tt_there = boxgetglobal( ttbox, there );
 
             // if offset point has infinity travel time, then update
             if ((tt_here == INFINITY) && (tt_there == INFINITY)) {
@@ -638,6 +605,9 @@ do_workloop (
   state->numsweeps = 0;
 
   for(;;) { // infinite loop
+
+    // TODO: temporary: remove at some point
+    if( state->numsweeps >= MAXSWEEPS ) return;
 
     state->numsweeps++;
     printf( "%d: doing sweep %ld...\n", state->myrank, state->numsweeps );
