@@ -105,7 +105,7 @@ boxalloc (
     struct POINT3D size = p3dsizeofregion( omin, omax );
     long numbytes = sizeof(*box->flat) * p3dcalcvolume( size );
 
-    float *flat = malloc( numbytes );
+    float *flat = (float *)malloc( numbytes );
     if( flat == NULL ) return 0;
 
     box->size = size;
