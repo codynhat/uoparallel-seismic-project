@@ -19,7 +19,7 @@ const int MAXSWEEPS = 2;
 
 #include "parseargs.h"
 #include "common.h"       // has struct FORWARDSTAR, NEIGHBOR, STATE
-#include "sweep.h"        // has some version of do_sweep( STATE* )
+#include "sweep-cuda.h"        // has some version of do_sweep( STATE* )
 
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -5,4 +5,4 @@ DIR=$HOME/uoparallel-seismic-project/mpi
 
 module load mpi
 cd $DIR
-mpirun -np 4 -cpupernode -cpuperrank $DIR/test.sh > $DIR/output
+mpirun -np 1 $DIR/test.sh > $DIR/output
