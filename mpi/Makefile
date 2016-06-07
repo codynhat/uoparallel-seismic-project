@@ -2,7 +2,7 @@ CC ?= gcc
 CUDA_CC ?= nvcc
 MPI_COMPILE_FLAGS = $(shell mpicc --showme:compile) -std=c99
 MPI_LINK_FLAGS = $(shell mpicc --showme:link)
-CUDA_LINK_FLAGS = -L/usr/local/cuda/lib64 -lcudart -lcuda -lstdc++
+CUDA_LINK_FLAGS = -L/usr/local/packages/cuda/7.5/lib64 -lcudart -lcuda -lstdc++
 INCLUDE = -I../include
 LIBS = -fopenmp
 DOCS=../docs

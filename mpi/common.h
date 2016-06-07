@@ -12,17 +12,18 @@
 #include "boxfiler.h"
 #include "floatbox.h"
 #include "intersect.h"
-#include "mpihelpers.h"
 #include "point3d.h"
 //#include "timing.h"
 
-
 #include <math.h>
-#include <mpi.h>
 #include <omp.h>
 #include <stdio.h>
 #include <stdlib.h>
 
+#ifndef __CUDACC__
+#include "mpihelpers.h"
+#include <mpi.h>
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 // structs

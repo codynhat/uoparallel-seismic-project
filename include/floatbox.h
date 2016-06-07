@@ -79,6 +79,9 @@ boxinit (
 }
 
 
+#ifdef __CUDACC__
+__device__ __host__
+#endif
 inline extern
 long
 boxindex (
@@ -151,7 +154,9 @@ boxgetlocal (
     return box.flat[ boxindex( box, pt ) ];
 }
 
-
+#ifdef __CUDACC__
+__device__ __host__
+#endif
 inline extern
 void
 boxputlocal (
@@ -164,7 +169,9 @@ boxputlocal (
     box.flat[ boxindex( box, pt ) ] = val;
 }
 
-
+#ifdef __CUDACC__
+__device__ __host__
+#endif
 inline extern
 float
 boxgetglobal (
@@ -176,7 +183,9 @@ boxgetglobal (
     return box.flat[ boxindex( box, pt ) - box.offset.o ];
 }
 
-
+#ifdef __CUDACC__
+__device__ __host__
+#endif
 inline extern
 void
 boxputglobal (

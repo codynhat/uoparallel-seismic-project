@@ -44,6 +44,9 @@ struct POINT3D {
 // functions
 ////////////////////////////////////////////////////////////////////////////////
 
+#ifdef __CUDACC__
+__device__ __host__
+#endif
 inline extern
 struct POINT3D
 p3d (
@@ -54,7 +57,9 @@ p3d (
     return (struct POINT3D){x, y, z};
 }
 
-
+#ifdef __CUDACC__
+__device__ __host__
+#endif
 inline extern
 struct POINT3D
 p3daddp3d (
@@ -66,7 +71,9 @@ p3daddp3d (
     return (struct POINT3D){a.x + b.x, a.y + b.y, a.z + b.z};
 }
 
-
+#ifdef __CUDACC__
+__device__ __host__
+#endif
 inline extern
 struct POINT3D
 p3daddval (
@@ -79,7 +86,9 @@ p3daddval (
     return p3daddp3d( pt, p3d(val, val, val) );
 }
 
-
+#ifdef __CUDACC__
+__device__ __host__
+#endif
 inline extern
 int
 p3disless (
@@ -91,7 +100,9 @@ p3disless (
     return a.x < b.x || a.y < b.y || a.z < b.z;
 }
 
-
+#ifdef __CUDACC__
+__device__ __host__
+#endif
 inline extern
 int
 p3dismore (
@@ -103,7 +114,9 @@ p3dismore (
     return a.x > b.x || a.y > b.y || a.z > b.z;
 }
 
-
+#ifdef __CUDACC__
+__device__ __host__
+#endif
 inline extern
 int
 p3disnotequal (
@@ -114,7 +127,9 @@ p3disnotequal (
     return a.z != b.z || a.y != b.y || a.x != b.x;
 }
 
-
+#ifdef __CUDACC__
+__device__ __host__
+#endif
 inline extern
 struct POINT3D
 p3dmin (
@@ -129,7 +144,9 @@ p3dmin (
     );     
 }
 
-
+#ifdef __CUDACC__
+__device__ __host__
+#endif
 inline extern
 struct POINT3D
 p3dmax (
@@ -144,7 +161,9 @@ p3dmax (
     );
 }
 
-
+#ifdef __CUDACC__
+__device__ __host__
+#endif
 inline extern
 struct POINT3D
 p3dsubp3d (
