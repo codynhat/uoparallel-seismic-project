@@ -30,7 +30,7 @@ do_sweep_cuda(
   const struct FORWARDSTAR * const star,
   const int *numinstar
 )
-{ 
+{
   int x = blockIdx.x * blockDim.x + threadIdx.x + vbox->imin.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y + vbox->imin.y;
   int z = blockIdx.z * blockDim.z + threadIdx.z + vbox->imin.z;
@@ -39,8 +39,9 @@ do_sweep_cuda(
   
   const float vel_here = boxgetglobal( *vbox, here );
   const float tt_here = boxgetglobal( *ttbox, here );
-  
-   
+
+  if( x > vbox->imax.x || y > vbox->imax.y || z > vbox->imax.z ) return;   
+ 
   for( int l = 0; l < *numinstar; l++ ) {
     // find point in forward star based on offsets
     const struct POINT3D there = p3daddp3d( here, star[l].pos );
@@ -60,7 +61,6 @@ do_sweep_cuda(
     // ignore the starting point
     if( p3disnotequal( here, *ttstart ) ) {
       const float tt_there = boxgetglobal( *ttbox, there );
-      //printf("%f, %f\n", tt_here, tt_there); 
       
       // if offset point has infinity travel time, then update
       if ((tt_here == INFINITY) && (tt_there == INFINITY)) {
@@ -93,7 +93,6 @@ do_sweep_cuda(
       }
     }
   }
-  
 }
 
 
@@ -136,7 +135,7 @@ do_sweep (
   struct POINT3D ttstart = state->ttstart;
   const struct FORWARDSTAR * const star = state->star;
   const int numinstar = state->numinstar;
-
+ 
   struct FLOATBOX *d_vbox;
   float *d_vflat;
   boxcudacpy_host(&vbox, &d_vbox, &d_vflat);
@@ -150,8 +149,8 @@ do_sweep (
   cudaMemcpy(d_ttstart, &ttstart, sizeof(struct POINT3D), cudaMemcpyHostToDevice);
   
   struct FORWARDSTAR *d_star;
-  cudaMalloc(&d_star, sizeof(struct FORWARDSTAR));
-  cudaMemcpy(d_star, star, sizeof(struct FORWARDSTAR), cudaMemcpyHostToDevice);
+  cudaMalloc(&d_star, numinstar*sizeof(struct FORWARDSTAR));
+  cudaMemcpy(d_star, star, numinstar*sizeof(struct FORWARDSTAR), cudaMemcpyHostToDevice);
   
   int *d_numinstar;
   cudaMalloc(&d_numinstar, sizeof(int));
@@ -160,17 +159,21 @@ do_sweep (
   long anychange = 0;   
   
   cudaMemcpyToSymbol(changes, &anychange, sizeof(long));
-
-  dim3 grid(61, 61, 3);
+ 
+  int grid_x = ((vbox.imax.x - vbox.imin.x) / 4) + 1;
+  int grid_y = ((vbox.imax.y - vbox.imin.y) / 4) + 1;
+  int grid_z = ((vbox.imax.z - vbox.imin.z) / 17) + 1;
+  
+  printf("%d: %d, %d, %d - %d, %d, %d\n", state->myrank, vbox.size.x, vbox.size.y, vbox.size.z, grid_x, grid_y, grid_z);
+   
+  dim3 grid(grid_x, grid_y, grid_z);
   dim3 block(4, 4, 17);
 
-  do_sweep_cuda<<<1, block>>>(d_vbox, d_ttbox, d_ttstart, d_star, d_numinstar);
+  do_sweep_cuda<<<grid, block>>>(d_vbox, d_ttbox, d_ttstart, d_star, d_numinstar);
   
   boxcudacpy_dev(&d_ttbox, &ttbox, &d_ttflat);
   cudaMemcpyFromSymbol(&anychange, changes, sizeof(long));
- 
-  printf("CHANGES: %ld\n", anychange); 
- 
+  
   cudaFree(d_vbox);
   cudaFree(d_vflat);
   cudaFree(d_ttbox);
@@ -182,10 +185,6 @@ do_sweep (
   return anychange;
 }
 
-// long
-// do_sweep (
-//   struct STATE *state
-// )
 /*int 
 main()
 {

@@ -10,7 +10,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 // TODO: remove at some point: this stops all work after just one sweep
-const int MAXSWEEPS = 10;
+//const int MAXSWEEPS = 2;
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -19,7 +19,7 @@ const int MAXSWEEPS = 10;
 
 #include "parseargs.h"
 #include "common.h"       // has struct FORWARDSTAR, NEIGHBOR, STATE
-#include "sweep-cuda.h"        // has some version of do_sweep( STATE* )
+#include "sweep.h"        // has some version of do_sweep( STATE* )
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -88,7 +88,7 @@ main (
   do_preparempibuffers( &state );
 
   // TODO: read start position from somewhere
-  state.ttstart = p3d( 1, 1, 1 );
+  state.ttstart = p3d( 152, 20, 1 );
 
   // ttbox == travel time FLOATBOX: includes ghost regions
   do_preparettbox( &state );
@@ -510,7 +510,7 @@ do_workloop (
   for(;;) { // infinite loop
 
     // TODO: temporary: remove at some point
-    if( state->numsweeps >= MAXSWEEPS ) return;
+    //if( state->numsweeps >= MAXSWEEPS ) return;
 
     state->numsweeps++;
     printf( "%d: doing sweep %ld...\n", state->myrank, state->numsweeps );

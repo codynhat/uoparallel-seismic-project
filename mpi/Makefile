@@ -8,14 +8,17 @@ LIBS = -fopenmp
 DOCS=../docs
 
 PROGS = sweep-mpi-omp
-CUDA_PROGS = sweep-cuda.o
+CUDA_PROGS = sweep-mpi-cuda
 
 all: $(PROGS)
 
-$(PROGS) : % : %.c sweep-cuda.o
-	$(CC) $(MPI_COMPILE_FLAGS) $(LIBS) $(INCLUDE) $< sweep-cuda.o $(CUDA_LINK_FLAGS) $(MPI_LINK_FLAGS) -o $@
+$(PROGS) : % : %.c
+	$(CC) $(MPI_COMPILE_FLAGS) $(LIBS) $(INCLUDE) $< $(MPI_LINK_FLAGS) -o $@
 
-$(CUDA_PROGS) : %.o : %.cu
+mpi-cuda : % : sweep-mpi-cuda.c sweep-cuda.o
+	$(CC) $(MPI_COMPILE_FLAGS) $(LIBS) $(INCLUDE) $< sweep-cuda.o $(CUDA_LINK_FLAGS) $(MPI_LINK_FLAGS) -o sweep-mpi-cuda
+
+sweep-cuda.o : sweep-cuda.cu
 	$(CUDA_CC) $(INCLUDE) -c $< -o $@
 
 job: sweep-mpi-omp
